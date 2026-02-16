@@ -4,17 +4,18 @@
  */
 
 import { Logger } from '../shared/logger.js';
+import { StockfishWrapper } from './stockfish-wrapper.js';
 
 const logger = new Logger('StockfishManager');
 
 export class StockfishManager {
     constructor() {
         this.engine = null;
+        this.wrapper = new StockfishWrapper();
         this.ready = false;
         this.initAttempts = 0;
         this.maxAttempts = 3;
         this.isAnalyzing = false;
-        this.messageCallback = null;
     }
 
     /**
@@ -33,17 +34,14 @@ export class StockfishManager {
             logger.log('Loading Stockfish from:', stockfishUrl);
 
             this.engine = new Worker(stockfishUrl);
-
-            this.engine.onmessage = (event) => {
-                this.handleMessage(event.data);
-            };
+            this.wrapper.attachEngine(this.engine);
 
             this.engine.onerror = (error) => {
                 this.handleError(error);
             };
 
-            this.engine.postMessage('uci');
-
+            this.wrapper.onMessage((message) => this.handleMessage(message));
+            this.wrapper.postMessage('uci');
         } catch (error) {
             logger.error('Initialization failed:', error);
             this.reset();
@@ -64,10 +62,6 @@ export class StockfishManager {
 
         if (message.includes('bestmove')) {
             this.isAnalyzing = false;
-        }
-
-        if (this.messageCallback) {
-            this.messageCallback(message);
         }
     }
 
@@ -98,19 +92,19 @@ export class StockfishManager {
 
         if (this.isAnalyzing) {
             logger.log('Stopping previous analysis');
-            this.engine.postMessage('stop');
+            this.wrapper.postMessage('stop');
         }
 
         logger.log(`Analyzing position at depth ${depth}`);
 
         this.isAnalyzing = true;
-        this.engine.postMessage('stop');
+        this.wrapper.postMessage('stop');
 
         setTimeout(() => {
-            this.engine.postMessage('ucinewgame');
-            this.engine.postMessage(`position fen ${fen}`);
-            this.engine.postMessage('setoption name MultiPV value 3');
-            this.engine.postMessage(`go depth ${depth}`);
+            this.wrapper.postMessage('ucinewgame');
+            this.wrapper.postMessage(`position fen ${fen}`);
+            this.wrapper.postMessage('setoption name MultiPV value 3');
+            this.wrapper.postMessage(`go depth ${depth}`);
             logger.log('✅ Analysis started');
         }, 50);
     }
@@ -120,7 +114,7 @@ export class StockfishManager {
      * @param {Function} callback - Callback for engine messages
      */
     onMessage(callback) {
-        this.messageCallback = callback;
+        this.wrapper.onMessage(callback);
     }
 
     /**
@@ -133,6 +127,7 @@ export class StockfishManager {
         this.engine = null;
         this.ready = false;
         this.isAnalyzing = false;
+        this.wrapper = new StockfishWrapper();
     }
 
     /**

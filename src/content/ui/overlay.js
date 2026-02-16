@@ -29,7 +29,16 @@ export class Overlay {
         document.body.appendChild(this.element);
 
         this.attachEventListeners();
+        this.refreshControls();
         logger.log('Overlay created');
+    }
+
+    /**
+     * Refresh button labels and states from current settings
+     */
+    refreshControls() {
+        this.updateEnabledButton();
+        this.updateAutoButton();
     }
 
     /**
@@ -64,9 +73,7 @@ export class Overlay {
      */
     toggleEnabled() {
         this.isEnabled = !this.isEnabled;
-        const btn = document.getElementById('chess-assistant-toggle');
-        btn.textContent = this.isEnabled ? 'ON' : 'OFF';
-        btn.classList.toggle('off', !this.isEnabled);
+        this.updateEnabledButton();
 
         this.updateMessage(
             this.isEnabled
@@ -82,9 +89,7 @@ export class Overlay {
      */
     toggleAutoAnalyze() {
         this.autoAnalyze = !this.autoAnalyze;
-        const btn = document.getElementById('chess-assistant-auto');
-        btn.textContent = this.autoAnalyze ? 'AUTO' : 'MANUAL';
-        btn.classList.toggle('off', !this.autoAnalyze);
+        this.updateAutoButton();
 
         this.updateMessage(
             this.autoAnalyze
@@ -93,6 +98,28 @@ export class Overlay {
         );
 
         chrome.storage.sync.set({ autoAnalyze: this.autoAnalyze });
+    }
+
+    /**
+     * Update enabled button appearance
+     */
+    updateEnabledButton() {
+        const btn = document.getElementById('chess-assistant-toggle');
+        if (!btn) return;
+
+        btn.textContent = this.isEnabled ? 'ON' : 'OFF';
+        btn.classList.toggle('off', !this.isEnabled);
+    }
+
+    /**
+     * Update auto-analyze button appearance
+     */
+    updateAutoButton() {
+        const btn = document.getElementById('chess-assistant-auto');
+        if (!btn) return;
+
+        btn.textContent = this.autoAnalyze ? 'AUTO' : 'MANUAL';
+        btn.classList.toggle('off', !this.autoAnalyze);
     }
 
     /**
