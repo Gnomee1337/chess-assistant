@@ -61,6 +61,13 @@
                     if (mateMatch) {
                         const mateIn = parseInt(mateMatch[1]);
                         score = mateIn > 0 ? 1000 : -1000;
+                        topMoves[multipv - 1] = {
+                            move: move,
+                            score: score,
+                            multipv: multipv,
+                            mateIn: mateIn  // Store the mate-in value
+                        };
+                        return;  // Early return since we already set the move
                     } else if (scoreMatch) {
                         score = parseInt(scoreMatch[1]) / 100.0;
                     } else {
@@ -548,7 +555,16 @@
         moves.forEach((moveData, index) => {
             let scoreStr;
             if (Math.abs(moveData.score) > 100) {
-                scoreStr = moveData.score > 0 ? 'Mate!' : '-Mate';
+                if (moveData.mateIn !== undefined) {
+                    const absMate = Math.abs(moveData.mateIn);
+                    if (absMate === 1) {
+                        scoreStr = moveData.mateIn > 0 ? 'Checkmate' : '-Checkmate';
+                    } else {
+                        scoreStr = moveData.mateIn > 0 ? `Mate in ${absMate}` : `-Mate in ${absMate}`;
+                    }
+                } else {
+                    scoreStr = moveData.score > 0 ? 'Mate!' : '-Mate';
+                }
             } else {
                 scoreStr = moveData.score > 0 ? '+' + moveData.score.toFixed(2) : moveData.score.toFixed(2);
             }
