@@ -8,8 +8,11 @@
     let isAnalyzing = false;
     let currentDepth = 15;
     let isEnabled = true;
+    let autoAnalyze = true; // NEW: Auto-analyze toggle
     let overlay = null;
     let topMoves = [];
+    let lastMoveCount = 0; // NEW: Track move count
+    let moveObserver = null; // NEW: Mutation observer
 
     // Connect to background script
     function connectToBackground() {
@@ -93,7 +96,6 @@
         const toFile = files[uci[2]];
         const toRank = parseInt(uci[3]);
 
-        // Chess.com uses format: square-XY where X is file (1-8), Y is rank (1-8)
         const fromSquare = fromFile * 10 + fromRank;
         const toSquare = toFile * 10 + toRank;
 
@@ -110,7 +112,6 @@
 
             if (!board) return;
 
-            // Create highlight for source square
             const fromHighlight = document.createElement('div');
             fromHighlight.className = `highlight square-${squares.from} chess-assistant-highlight`;
             fromHighlight.style.backgroundColor = 'rgb(155, 199, 0)';
@@ -118,7 +119,6 @@
             fromHighlight.setAttribute('data-test-element', 'highlight');
             fromHighlight.setAttribute('data-test-type', 'highlight');
 
-            // Create highlight for destination square
             const toHighlight = document.createElement('div');
             toHighlight.className = `highlight square-${squares.to} chess-assistant-highlight`;
             toHighlight.style.backgroundColor = 'rgb(155, 199, 0)';
@@ -126,11 +126,9 @@
             toHighlight.setAttribute('data-test-element', 'highlight');
             toHighlight.setAttribute('data-test-type', 'highlight');
 
-            // Add to board
             board.appendChild(fromHighlight);
             board.appendChild(toHighlight);
 
-            // Draw arrow
             drawArrow(uci);
 
         } catch (error) {
@@ -139,6 +137,7 @@
     }
 
     // Draw arrow on the board
+    // Draw arrow on the board - FIXED
     function drawArrow(uci) {
         try {
             const board = document.querySelector('wc-chess-board');
@@ -153,13 +152,12 @@
             const toFile = files[uci[2]];
             const toRank = parseInt(uci[3]) - 1;
 
-            // Calculate coordinates (each square is 12.5% of board)
             const fromX = fromFile * 12.5 + 6.25;
             const fromY = (7 - fromRank) * 12.5 + 6.25;
             const toX = toFile * 12.5 + 6.25;
             const toY = (7 - toRank) * 12.5 + 6.25;
 
-            // Create arrow
+            // Create arrow (SVG line element)
             const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             arrow.setAttribute('x1', fromX);
             arrow.setAttribute('y1', fromY);
@@ -170,7 +168,7 @@
             arrow.setAttribute('stroke-linecap', 'round');
             arrow.setAttribute('marker-end', 'url(#arrowhead-green)');
             arrow.setAttribute('opacity', '0.8');
-            arrow.className = 'chess-assistant-arrow';
+            arrow.setAttribute('class', 'chess-assistant-arrow'); // FIXED: Use setAttribute instead of className
 
             // Create arrowhead marker if it doesn't exist
             let defs = arrowsSvg.querySelector('defs');
@@ -205,11 +203,9 @@
 
     // Clear all highlights and arrows
     function clearHighlights() {
-        // Remove highlight divs
         const highlights = document.querySelectorAll('.chess-assistant-highlight');
         highlights.forEach(h => h.remove());
 
-        // Remove arrows
         const arrows = document.querySelectorAll('.chess-assistant-arrow');
         arrows.forEach(a => a.remove());
     }
@@ -217,7 +213,6 @@
     // Get current position FEN from chess.com
     function getCurrentFEN() {
         try {
-            // Method 1: Try window.chessboard
             if (typeof window.chessboard !== 'undefined' && window.chessboard) {
                 try {
                     const board = window.chessboard;
@@ -235,11 +230,9 @@
                 } catch (e) { }
             }
 
-            // Method 2: Parse from DOM
             const fen = parseBoardFromDOM();
             if (fen) return fen;
 
-            // Method 3: Starting position
             return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
         } catch (error) {
@@ -248,20 +241,18 @@
         }
     }
 
-    // Parse board from DOM - FIXED 
+    // Parse board from DOM - FIXED VERSION
     function parseBoardFromDOM() {
         try {
             const board = Array(8).fill(null).map(() => Array(8).fill(''));
             let foundPieces = false;
 
-            // Find the chess board element
             const chessBoard = document.querySelector('wc-chess-board, chess-board, .board');
             if (!chessBoard) {
                 console.log('Chess Assistant - Board element not found');
                 return null;
             }
 
-            // Find all piece elements
             const pieces = chessBoard.querySelectorAll('[class*="piece"]');
             console.log('Chess Assistant - Found', pieces.length, 'pieces');
 
@@ -270,17 +261,14 @@
             pieces.forEach(piece => {
                 const classes = piece.className;
 
-                // Determine piece type and color
                 let pieceChar = '';
 
-                // White pieces
                 if (classes.includes('wp')) pieceChar = 'P';
                 else if (classes.includes('wn')) pieceChar = 'N';
                 else if (classes.includes('wb')) pieceChar = 'B';
                 else if (classes.includes('wr')) pieceChar = 'R';
                 else if (classes.includes('wq')) pieceChar = 'Q';
                 else if (classes.includes('wk')) pieceChar = 'K';
-                // Black pieces
                 else if (classes.includes('bp')) pieceChar = 'p';
                 else if (classes.includes('bn')) pieceChar = 'n';
                 else if (classes.includes('bb')) pieceChar = 'b';
@@ -290,14 +278,12 @@
 
                 if (!pieceChar) return;
 
-                // Extract square position - format is "square-XY" where X=file(1-8), Y=rank(1-8)
                 const squareMatch = classes.match(/square-(\d)(\d)/);
                 if (squareMatch) {
-                    const file = parseInt(squareMatch[1]) - 1; // 0-7
-                    const rank = parseInt(squareMatch[2]) - 1; // 0-7
+                    const file = parseInt(squareMatch[1]) - 1;
+                    const rank = parseInt(squareMatch[2]) - 1;
 
                     if (rank >= 0 && rank < 8 && file >= 0 && file < 8) {
-                        // Chess.com uses rank 1 = index 0, so we need to invert
                         board[7 - rank][file] = pieceChar;
                         foundPieces = true;
                     }
@@ -309,7 +295,6 @@
                 return null;
             }
 
-            // Convert board array to FEN notation
             let fen = '';
             for (let rank = 0; rank < 8; rank++) {
                 let empty = 0;
@@ -328,23 +313,20 @@
                 if (rank < 7) fen += '/';
             }
 
-            // Determine whose turn it is by checking move list
             let toMove = 'w';
             try {
                 const lastMove = document.querySelector('.move-list .node.selected');
                 if (lastMove) {
                     if (lastMove.classList.contains('black-move')) {
-                        toMove = 'w'; // Black just moved, white's turn
+                        toMove = 'w';
                     } else if (lastMove.classList.contains('white-move')) {
-                        toMove = 'b'; // White just moved, black's turn
+                        toMove = 'b';
                     }
                 }
             } catch (e) {
                 console.log('Chess Assistant - Could not determine turn, defaulting to white');
             }
 
-            // Add turn, castling rights, en passant, etc.
-            // Simplified - assumes all castling rights available
             fen += ` ${toMove} KQkq - 0 1`;
 
             console.log('Chess Assistant - Parsed FEN:', fen);
@@ -382,12 +364,50 @@
             movesContainer.innerHTML = '<div class="loading">Analyzing position...</div>';
         }
 
-        // Send to background script
         backgroundPort.postMessage({
             type: 'analyze',
             fen: fen,
             depth: currentDepth
         });
+    }
+
+    // NEW: Watch for move changes
+    function setupMoveObserver() {
+        const moveList = document.querySelector('.move-list, wc-simple-move-list');
+        if (!moveList) {
+            console.log('Chess Assistant - Move list not found, retrying...');
+            setTimeout(setupMoveObserver, 1000);
+            return;
+        }
+
+        console.log('Chess Assistant - Setting up move observer');
+
+        moveObserver = new MutationObserver(function (mutations) {
+            if (!autoAnalyze || !isEnabled) return;
+
+            // Check if a new move was added
+            const currentMoveCount = document.querySelectorAll('.move-list .node').length;
+
+            if (currentMoveCount > lastMoveCount) {
+                lastMoveCount = currentMoveCount;
+                console.log('Chess Assistant - New move detected, auto-analyzing...');
+
+                // Wait a bit for the board to update
+                setTimeout(() => {
+                    if (!isAnalyzing) {
+                        analyzePosition();
+                    }
+                }, 500);
+            }
+        });
+
+        moveObserver.observe(moveList, {
+            childList: true,
+            subtree: true
+        });
+
+        // Set initial move count
+        lastMoveCount = document.querySelectorAll('.move-list .node').length;
     }
 
     // Create overlay UI
@@ -400,17 +420,47 @@
       <div class="chess-assistant-header">
         <span>♟️ Chess Assistant</span>
         <button id="chess-assistant-toggle" class="toggle-btn">ON</button>
+        <button id="chess-assistant-auto" class="auto-btn" title="Auto-analyze after each move">AUTO</button>
         <button id="chess-assistant-analyze" class="analyze-btn">Analyze</button>
       </div>
       <div id="chess-assistant-moves" class="moves-container">
-        <div class="loading">Click "Analyze" to get move suggestions</div>
+        <div class="loading">Auto-analysis enabled</div>
       </div>
     `;
 
         document.body.appendChild(overlay);
 
         document.getElementById('chess-assistant-toggle').addEventListener('click', toggleAssistant);
+        document.getElementById('chess-assistant-auto').addEventListener('click', toggleAutoAnalyze);
         document.getElementById('chess-assistant-analyze').addEventListener('click', analyzePosition);
+
+        // Update auto button state
+        updateAutoButton();
+    }
+
+    // NEW: Toggle auto-analyze
+    function toggleAutoAnalyze() {
+        autoAnalyze = !autoAnalyze;
+        updateAutoButton();
+
+        const movesContainer = document.getElementById('chess-assistant-moves');
+        if (movesContainer && !isAnalyzing) {
+            movesContainer.innerHTML = autoAnalyze
+                ? '<div class="loading">Auto-analysis enabled</div>'
+                : '<div class="loading">Click "Analyze" to get move suggestions</div>';
+        }
+
+        // Save setting
+        chrome.storage.sync.set({ autoAnalyze: autoAnalyze });
+    }
+
+    // NEW: Update auto button appearance
+    function updateAutoButton() {
+        const autoBtn = document.getElementById('chess-assistant-auto');
+        if (autoBtn) {
+            autoBtn.textContent = autoAnalyze ? 'AUTO' : 'MANUAL';
+            autoBtn.classList.toggle('off', !autoAnalyze);
+        }
     }
 
     // Toggle assistant
@@ -423,7 +473,7 @@
         const movesContainer = document.getElementById('chess-assistant-moves');
         if (movesContainer) {
             movesContainer.innerHTML = isEnabled
-                ? '<div class="loading">Click "Analyze" to get move suggestions</div>'
+                ? (autoAnalyze ? '<div class="loading">Auto-analysis enabled</div>' : '<div class="loading">Click "Analyze" to get move suggestions</div>')
                 : '<div class="loading">Assistant disabled</div>';
         }
     }
@@ -460,7 +510,6 @@
 
         movesContainer.innerHTML = html;
 
-        // Add hover event listeners
         const moveItems = movesContainer.querySelectorAll('.move-item');
         moveItems.forEach(item => {
             item.addEventListener('mouseenter', function () {
@@ -484,13 +533,17 @@
 
     // Load settings
     function loadSettings() {
-        chrome.storage.sync.get(['depth', 'enabled'], function (result) {
+        chrome.storage.sync.get(['depth', 'enabled', 'autoAnalyze'], function (result) {
             if (result && result.depth) {
                 currentDepth = result.depth;
             }
             if (result && result.enabled !== undefined) {
                 isEnabled = result.enabled;
             }
+            if (result && result.autoAnalyze !== undefined) {
+                autoAnalyze = result.autoAnalyze;
+            }
+            updateAutoButton();
         });
     }
 
@@ -507,6 +560,10 @@
                 toggleBtn.classList.toggle('off', !isEnabled);
             }
         }
+        if (changes.autoAnalyze !== undefined) {
+            autoAnalyze = changes.autoAnalyze.newValue;
+            updateAutoButton();
+        }
     });
 
     // Initialize
@@ -517,6 +574,7 @@
         setTimeout(() => {
             connectToBackground();
             createOverlay();
+            setupMoveObserver(); // NEW: Start watching for moves
             console.log('Chess Assistant - Ready!');
         }, 2000);
     }

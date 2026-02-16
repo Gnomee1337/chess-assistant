@@ -155,3 +155,25 @@
 .move-item {
   animation: slideIn 0.3s ease-out;
 }
+
+.auto-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #22c55e;
+  color: white;
+}
+
+.auto-btn.off {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.auto-btn:hover {
+  transform: scale(1.05);
+}
