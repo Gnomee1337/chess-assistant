@@ -17,6 +17,11 @@ export class Overlay {
         this.isCollapsed = false;
         this.isHidden = false;
         this.topMoves = [];
+        this.dragState = {
+            isDragging: false,
+            offsetX: 0,
+            offsetY: 0
+        };
     }
 
     /**
@@ -36,6 +41,7 @@ export class Overlay {
         document.body.appendChild(this.element);
         document.body.appendChild(this.launcher);
 
+        this.setInitialPosition();
         this.attachEventListeners();
         this.refreshControls();
         logger.log('Overlay created');
@@ -79,6 +85,84 @@ export class Overlay {
         document.getElementById('chess-assistant-collapse').addEventListener('click', () => this.toggleCollapse());
         document.getElementById('chess-assistant-hide').addEventListener('click', () => this.hideOverlay());
         this.launcher.addEventListener('click', () => this.showOverlay());
+
+        const header = this.element.querySelector('.chess-assistant-header');
+        if (header) {
+            header.addEventListener('mousedown', (event) => this.startDrag(event));
+        }
+
+        document.addEventListener('mousemove', (event) => this.onDrag(event));
+        document.addEventListener('mouseup', () => this.stopDrag());
+        window.addEventListener('resize', () => this.handleResize());
+    }
+
+    setInitialPosition() {
+        if (!this.element) return;
+
+        const margin = 20;
+        const width = this.element.offsetWidth || 280;
+        this.setPosition(window.innerWidth - width - margin, margin);
+    }
+
+    setPosition(left, top) {
+        if (!this.element) return;
+
+        const margin = 8;
+        const overlayRect = this.element.getBoundingClientRect();
+        const maxLeft = Math.max(margin, window.innerWidth - overlayRect.width - margin);
+        const maxTop = Math.max(margin, window.innerHeight - overlayRect.height - margin);
+        const clampedLeft = Math.min(Math.max(left, margin), maxLeft);
+        const clampedTop = Math.min(Math.max(top, margin), maxTop);
+
+        this.element.style.left = `${clampedLeft}px`;
+        this.element.style.top = `${clampedTop}px`;
+        this.element.style.right = 'auto';
+
+        this.updateLauncherPosition(clampedLeft, clampedTop);
+    }
+
+    updateLauncherPosition(left, top) {
+        if (!this.launcher) return;
+
+        this.launcher.style.left = `${left}px`;
+        this.launcher.style.top = `${top}px`;
+        this.launcher.style.right = 'auto';
+    }
+
+    startDrag(event) {
+        if (event.button !== 0) return;
+        if (event.target.closest('button')) return;
+
+        const overlayRect = this.element.getBoundingClientRect();
+        this.dragState.isDragging = true;
+        this.dragState.offsetX = event.clientX - overlayRect.left;
+        this.dragState.offsetY = event.clientY - overlayRect.top;
+
+        this.element.classList.add('dragging');
+        event.preventDefault();
+    }
+
+    onDrag(event) {
+        if (!this.dragState.isDragging || !this.element) return;
+
+        this.setPosition(
+            event.clientX - this.dragState.offsetX,
+            event.clientY - this.dragState.offsetY
+        );
+    }
+
+    stopDrag() {
+        if (!this.dragState.isDragging || !this.element) return;
+
+        this.dragState.isDragging = false;
+        this.element.classList.remove('dragging');
+    }
+
+    handleResize() {
+        if (!this.element) return;
+
+        const overlayRect = this.element.getBoundingClientRect();
+        this.setPosition(overlayRect.left, overlayRect.top);
     }
 
     toggleCollapse() {
@@ -102,6 +186,9 @@ export class Overlay {
         this.isHidden = false;
         this.element.classList.remove('hidden');
         this.launcher.classList.remove('visible');
+
+        const overlayRect = this.element.getBoundingClientRect();
+        this.setPosition(overlayRect.left, overlayRect.top);
     }
 
     /**

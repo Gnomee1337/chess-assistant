@@ -27,6 +27,10 @@
   border-bottom: none;
 }
 
+#chess-assistant-overlay.dragging {
+  opacity: 0.95;
+}
+
 #chess-assistant-launcher {
   position: fixed;
   top: 20px;
@@ -54,6 +58,8 @@
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: move;
+  user-select: none;
 }
 
 .chess-assistant-header span {
