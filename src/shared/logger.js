@@ -29,7 +29,11 @@ export class Logger {
     }
 
     debug(...args) {
-        if (this.enabled && process.env.NODE_ENV === 'development') {
+        const isDevelopment = typeof process !== 'undefined'
+            && process.env
+            && process.env.NODE_ENV === 'development';
+
+        if (this.enabled && isDevelopment) {
             console.debug(`[${this.context}]`, ...args);
         }
     }
