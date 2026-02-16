@@ -2,42 +2,37 @@
 
 /**
  * Sync public/eco.json from @chess-openings/eco.json package.
+ *
+ * Uses the package API (`openingBook`) instead of reading internal files,
+ * so it works even when package `exports` blocks direct access to package.json.
  */
 
 const fs = require('fs-extra');
 const path = require('path');
 
-async function resolveEcoPath() {
-    const packageJsonPath = require.resolve('@chess-openings/eco.json/package.json');
-    const packageDir = path.dirname(packageJsonPath);
+async function loadFromPackageApi() {
+    const pkg = await import('@chess-openings/eco.json');
 
-    const candidates = [
-        path.join(packageDir, 'eco.json'),
-        path.join(packageDir, 'data', 'eco.json'),
-        path.join(packageDir, 'dist', 'eco.json')
-    ];
-
-    for (const candidate of candidates) {
-        if (await fs.pathExists(candidate)) {
-            return candidate;
-        }
+    if (!pkg || typeof pkg.openingBook !== 'function') {
+        throw new Error('Package does not expose openingBook()');
     }
 
-    throw new Error(`Could not locate eco.json inside package. Checked: ${candidates.join(', ')}`);
+    const content = await pkg.openingBook();
+
+    if (!Array.isArray(content)) {
+        throw new Error('openingBook() did not return an array');
+    }
+
+    return content;
 }
 
 async function run() {
     const root = path.join(__dirname, '..');
     const target = path.join(root, 'public', 'eco.json');
 
-    const source = await resolveEcoPath();
-    const content = await fs.readJson(source);
-
-    if (!Array.isArray(content)) {
-        throw new Error('Source eco.json is not an array');
-    }
-
+    const content = await loadFromPackageApi();
     await fs.writeJson(target, content, { spaces: 2 });
+
     console.log(`Synced ${content.length} ECO entries to public/eco.json`);
 }
 

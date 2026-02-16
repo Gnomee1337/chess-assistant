@@ -18,7 +18,7 @@ Opening Explorer is designed to use the official ECO npm package:
 3. Build extension:
    - `npm run build`
 
-This writes the package dataset to `public/eco.json`, and the build copies it to `dist/eco.json`.
+`npm run eco:sync` calls the package API (`openingBook`) and writes the dataset to `public/eco.json`; build then copies it to `dist/eco.json`.
 
 ## Runtime behavior
 
