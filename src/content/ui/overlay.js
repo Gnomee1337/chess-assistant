@@ -11,8 +11,11 @@ export class Overlay {
     constructor(analysisService) {
         this.analysisService = analysisService;
         this.element = null;
+        this.launcher = null;
         this.isEnabled = true;
         this.autoAnalyze = true;
+        this.isCollapsed = false;
+        this.isHidden = false;
         this.topMoves = [];
     }
 
@@ -26,7 +29,12 @@ export class Overlay {
         this.element.id = 'chess-assistant-overlay';
         this.element.innerHTML = this.getTemplate();
 
+        this.launcher = document.createElement('button');
+        this.launcher.id = 'chess-assistant-launcher';
+        this.launcher.textContent = '♟️ Assistant';
+
         document.body.appendChild(this.element);
+        document.body.appendChild(this.launcher);
 
         this.attachEventListeners();
         this.refreshControls();
@@ -52,6 +60,8 @@ export class Overlay {
                 <button id="chess-assistant-toggle" class="toggle-btn">ON</button>
                 <button id="chess-assistant-auto" class="auto-btn" title="Auto-analyze after each move">AUTO</button>
                 <button id="chess-assistant-analyze" class="analyze-btn">Analyze</button>
+                <button id="chess-assistant-collapse" class="icon-btn" title="Collapse overlay">−</button>
+                <button id="chess-assistant-hide" class="icon-btn" title="Hide overlay">✕</button>
             </div>
             <div id="chess-assistant-moves" class="moves-container">
                 <div class="loading">Auto-analysis enabled</div>
@@ -66,6 +76,32 @@ export class Overlay {
         document.getElementById('chess-assistant-toggle').addEventListener('click', () => this.toggleEnabled());
         document.getElementById('chess-assistant-auto').addEventListener('click', () => this.toggleAutoAnalyze());
         document.getElementById('chess-assistant-analyze').addEventListener('click', () => this.analyze());
+        document.getElementById('chess-assistant-collapse').addEventListener('click', () => this.toggleCollapse());
+        document.getElementById('chess-assistant-hide').addEventListener('click', () => this.hideOverlay());
+        this.launcher.addEventListener('click', () => this.showOverlay());
+    }
+
+    toggleCollapse() {
+        this.isCollapsed = !this.isCollapsed;
+        this.element.classList.toggle('collapsed', this.isCollapsed);
+
+        const collapseBtn = document.getElementById('chess-assistant-collapse');
+        if (collapseBtn) {
+            collapseBtn.textContent = this.isCollapsed ? '+' : '−';
+            collapseBtn.title = this.isCollapsed ? 'Expand overlay' : 'Collapse overlay';
+        }
+    }
+
+    hideOverlay() {
+        this.isHidden = true;
+        this.element.classList.add('hidden');
+        this.launcher.classList.add('visible');
+    }
+
+    showOverlay() {
+        this.isHidden = false;
+        this.element.classList.remove('hidden');
+        this.launcher.classList.remove('visible');
     }
 
     /**
