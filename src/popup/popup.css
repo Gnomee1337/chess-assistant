@@ -6,6 +6,8 @@
   --brand-green: #4ade80;
   --brand-green-dark: #22c55e;
   --brand-ink: #064e3b;
+  --example-highlight: #9bc700;
+  --example-arrow: #9bc700;
 }
 
 * {
@@ -44,6 +46,38 @@ h2 {
   padding: 6px 2px;
 }
 
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tab-btn {
+  border: 1px solid var(--surface-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: rgba(74, 222, 128, 0.2);
+  border-color: rgba(74, 222, 128, 0.6);
+}
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
 .setting-group,
 .info {
   background: var(--surface);
@@ -69,6 +103,15 @@ input[type='range'] {
   margin: 8px 0 4px;
   cursor: pointer;
   accent-color: var(--brand-green);
+}
+
+input[type='color'] {
+  width: 100%;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
 }
 
 .depth-value {
@@ -112,6 +155,73 @@ input[type='range'] {
   font-size: 12px;
   line-height: 1.5;
   border-left: 3px solid var(--brand-green);
+}
+
+.examples {
+  padding-bottom: 12px;
+}
+
+.example-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.example-board {
+  position: relative;
+  height: 140px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    rgba(0, 0, 0, 0.2);
+  background-size: 34px 34px;
+  background-position: 0 0, 17px 17px;
+  overflow: hidden;
+}
+
+.example-square {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--example-highlight);
+  opacity: 0.65;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+}
+
+.square-from {
+  bottom: 20px;
+  left: 20px;
+}
+
+.square-to {
+  top: 20px;
+  right: 20px;
+}
+
+.example-arrow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.example-arrow line {
+  stroke: var(--example-arrow);
+  stroke-width: 3;
+  opacity: 0.85;
+}
+
+.example-arrow polygon {
+  fill: var(--example-arrow);
+}
+
+.preview-note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-soft);
 }
 
 .save-btn {

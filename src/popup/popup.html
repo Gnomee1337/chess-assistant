@@ -10,27 +10,63 @@
   <div class="container">
     <h2>♟️ Chess Assistant</h2>
 
-    <div class="setting-group">
-      <label for="depth">Analysis Depth</label>
-      <input type="range" id="depth" min="5" max="25" value="15" step="1" />
-      <div class="depth-value">
-        <span class="depth-display" id="depthValue">15</span>
-        <div class="depth-label">
-          <div class="depth-subtext">moves ahead</div>
+    <div class="tabs" role="tablist" aria-label="Settings sections">
+      <button class="tab-btn active" id="analysisTabBtn" data-tab="analysis" role="tab" aria-selected="true">Analysis</button>
+      <button class="tab-btn" id="colorsTabBtn" data-tab="colors" role="tab" aria-selected="false">Colors</button>
+    </div>
+
+    <div class="tab-panel active" id="analysisTab" role="tabpanel" aria-labelledby="analysisTabBtn">
+      <div class="setting-group">
+        <label for="depth">Analysis Depth</label>
+        <input type="range" id="depth" min="5" max="25" value="15" step="1" />
+        <div class="depth-value">
+          <span class="depth-display" id="depthValue">15</span>
+          <div class="depth-label">
+            <div class="depth-subtext">moves ahead</div>
+          </div>
+        </div>
+        <div class="depth-hint">
+          • 5-10: Fast, basic analysis<br />
+          • 11-18: Balanced (recommended)<br />
+          • 19-25: Deep, slower analysis
         </div>
       </div>
-      <div class="depth-hint">
-        • 5-10: Fast, basic analysis<br />
-        • 11-18: Balanced (recommended)<br />
-        • 19-25: Deep, slower analysis
+
+      <div class="info">
+        <strong>💡 How to use:</strong><br />
+        1. Go to a game on chess.com<br />
+        2. Click "Analyze" button in the overlay<br />
+        3. View top 3 suggested moves with scores
       </div>
     </div>
 
-    <div class="info">
-      <strong>💡 How to use:</strong><br />
-      1. Go to a game on chess.com<br />
-      2. Click "Analyze" button in the overlay<br />
-      3. View top 3 suggested moves with scores
+    <div class="tab-panel" id="colorsTab" role="tabpanel" aria-labelledby="colorsTabBtn" hidden>
+      <div class="setting-group">
+        <label for="highlightColor">Highlight Color</label>
+        <input type="color" id="highlightColor" value="#9bc700" />
+      </div>
+
+      <div class="setting-group">
+        <label for="arrowColor">Arrow Color</label>
+        <input type="color" id="arrowColor" value="#9bc700" />
+      </div>
+
+      <div class="setting-group examples">
+        <div class="example-title">Preview</div>
+        <div class="example-board">
+          <div class="example-square square-from"></div>
+          <div class="example-square square-to"></div>
+          <svg class="example-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <marker id="exampleArrowHead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <polygon points="0 0, 8 4, 0 8" />
+              </marker>
+            </defs>
+            <line x1="18" y1="82" x2="82" y2="18" marker-end="url(#exampleArrowHead)" />
+          </svg>
+        </div>
+        <div class="preview-note">Example updates instantly while you change colors.</div>
+      </div>
     </div>
 
     <button class="save-btn" id="saveBtn">Save Settings</button>

@@ -8,6 +8,27 @@ import { Logger } from '../../shared/logger.js';
 const logger = new Logger('MoveHighlighter');
 
 export class MoveHighlighter {
+    static colors = {
+        highlight: COLORS.HIGHLIGHT,
+        arrow: COLORS.ARROW
+    };
+
+    /**
+     * Set highlight and arrow colors
+     * @param {Object} colors
+     * @param {string} colors.highlightColor
+     * @param {string} colors.arrowColor
+     */
+    static setColors({ highlightColor, arrowColor }) {
+        if (highlightColor) {
+            this.colors.highlight = highlightColor;
+        }
+
+        if (arrowColor) {
+            this.colors.arrow = arrowColor;
+        }
+    }
+
     /**
      * Highlight a move on the board
      * @param {string} uci - UCI move notation (e.g., "e2e4")
@@ -65,7 +86,7 @@ export class MoveHighlighter {
         [squares.from, squares.to].forEach(square => {
             const highlight = document.createElement('div');
             highlight.className = `highlight square-${square} chess-assistant-highlight`;
-            highlight.style.backgroundColor = COLORS.HIGHLIGHT;
+            highlight.style.backgroundColor = this.colors.highlight;
             highlight.style.opacity = '0.6';
             highlight.setAttribute('data-test-element', 'highlight');
             highlight.setAttribute('data-test-type', 'highlight');
@@ -85,9 +106,9 @@ export class MoveHighlighter {
         if (!arrowsSvg) return;
 
         const fromFile = FILES[uci[0]];
-        const fromRank = parseInt(uci[1]) - 1;
+        const fromRank = parseInt(uci[1], 10) - 1;
         const toFile = FILES[uci[2]];
-        const toRank = parseInt(uci[3]) - 1;
+        const toRank = parseInt(uci[3], 10) - 1;
 
         const fromX = fromFile * 12.5 + 6.25;
         const fromY = (7 - fromRank) * 12.5 + 6.25;
@@ -111,10 +132,10 @@ export class MoveHighlighter {
         arrow.setAttribute('y1', y1);
         arrow.setAttribute('x2', x2);
         arrow.setAttribute('y2', y2);
-        arrow.setAttribute('stroke', COLORS.ARROW);
+        arrow.setAttribute('stroke', this.colors.arrow);
         arrow.setAttribute('stroke-width', '1.5');
         arrow.setAttribute('stroke-linecap', 'round');
-        arrow.setAttribute('marker-end', 'url(#arrowhead-green)');
+        arrow.setAttribute('marker-end', 'url(#arrowhead-chess-assistant)');
         arrow.setAttribute('opacity', '0.8');
         arrow.setAttribute('class', 'chess-assistant-arrow');
 
@@ -133,21 +154,25 @@ export class MoveHighlighter {
             svg.appendChild(defs);
         }
 
-        if (defs.querySelector('#arrowhead-green')) return;
+        let marker = defs.querySelector('#arrowhead-chess-assistant');
+        if (!marker) {
+            marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead-chess-assistant');
+            marker.setAttribute('markerWidth', '4');
+            marker.setAttribute('markerHeight', '4');
+            marker.setAttribute('refX', '2');
+            marker.setAttribute('refY', '2');
+            marker.setAttribute('orient', 'auto');
 
-        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-        marker.setAttribute('id', 'arrowhead-green');
-        marker.setAttribute('markerWidth', '4');
-        marker.setAttribute('markerHeight', '4');
-        marker.setAttribute('refX', '2');
-        marker.setAttribute('refY', '2');
-        marker.setAttribute('orient', 'auto');
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 4 2, 0 4');
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+        }
 
-        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        polygon.setAttribute('points', '0 0, 4 2, 0 4');
-        polygon.setAttribute('fill', COLORS.ARROW);
-
-        marker.appendChild(polygon);
-        defs.appendChild(marker);
+        const polygon = marker.querySelector('polygon');
+        if (polygon) {
+            polygon.setAttribute('fill', this.colors.arrow);
+        }
     }
 }
