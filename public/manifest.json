@@ -33,7 +33,11 @@
   "web_accessible_resources": [
     "stockfish.js",
     "stockfish.wasm",
-    "eco.json"
+    "ecoA.json",
+    "ecoB.json",
+    "ecoC.json",
+    "ecoD.json",
+    "ecoE.json"
   ],
   "browser_action": {
     "default_popup": "popup.html",

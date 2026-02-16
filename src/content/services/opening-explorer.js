@@ -7,6 +7,13 @@
 import { Logger } from '../../shared/logger.js';
 
 const logger = new Logger('OpeningExplorer');
+const LOCAL_ECO_FILES = [
+    'ecoA.json',
+    'ecoB.json',
+    'ecoC.json',
+    'ecoD.json',
+    'ecoE.json'
+];
 
 export class OpeningExplorer {
     constructor() {
@@ -18,33 +25,55 @@ export class OpeningExplorer {
     async initialize() {
         if (this.ready) return;
 
-        this.entries = await this.loadBundledEcoFile();
+        this.entries = await this.loadEcoData();
         this.buildIndexes();
         this.ready = true;
 
         logger.log(`Opening database loaded (${this.entries.length} entries)`);
     }
 
-    async loadBundledEcoFile() {
+    async loadEcoData() {
         try {
-            const url = chrome.runtime.getURL('eco.json');
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Could not fetch eco.json (${response.status})`);
-            }
+            const chunks = await Promise.all(
+                LOCAL_ECO_FILES.map((file) => this.fetchLocalEcoChunk(file))
+            );
 
-            const data = await response.json();
-            if (!Array.isArray(data)) {
-                throw new Error('eco.json is not an array');
-            }
-
-            const valid = data.filter(item => item && (item.name || item.eco) && (item.moves || item.fen));
-            logger.log(`Loaded ${valid.length} entries from eco.json`);
+            const entries = chunks.flat();
+            const valid = entries.filter(item => item && (item.name || item.eco) && (item.moves || item.fen));
+            logger.log(`Loaded ${valid.length} entries from local ECO files`);
             return valid;
         } catch (error) {
-            logger.warn('Failed to load eco.json:', error.message || error);
+            logger.warn('Failed to load local ECO data:', error.message || error);
             return [];
         }
+    }
+
+    async fetchLocalEcoChunk(fileName) {
+        const url = chrome.runtime.getURL(fileName);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            logger.warn(`Could not fetch ${fileName} (${response.status}); skipping file`);
+            return [];
+        }
+
+        const data = await response.json();
+        return this.mapRawChunkToEntries(data);
+    }
+
+    mapRawChunkToEntries(data) {
+        if (Array.isArray(data)) {
+            return data;
+        }
+
+        if (!data || typeof data !== 'object') {
+            return [];
+        }
+
+        return Object.entries(data).map(([fen, opening]) => ({
+            fen,
+            ...opening
+        }));
     }
 
     buildIndexes() {
@@ -193,7 +222,7 @@ export class OpeningExplorer {
         return {
             eco: 'N/A',
             name: 'Opening not recognized yet',
-            lines: ['Install full ECO dataset to improve matching'],
+            lines: ['Add ecoA.json - ecoE.json to improve matching'],
             playedMoves
         };
     }
