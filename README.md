@@ -2,48 +2,26 @@
 
 Free chess analysis assistant for Chess.com using Stockfish.
 
-## What else would be good to add in this extension?
+## Opening Explorer data source
 
-Here are high-impact features to consider next:
+Opening Explorer is designed to use the official ECO npm package:
 
-1. **Engine controls beyond depth**
-   - Add time-per-move, MultiPV (top N lines), and skill level controls in popup settings.
-   - Useful for balancing speed vs quality on low-end devices.
+- `@chess-openings/eco.json`
+- Source: https://github.com/hayatbiralem/eco.json
 
-2. **Blunder / mistake alerts after move**
-   - Compare eval before and after each move and classify as inaccuracy/mistake/blunder.
-   - Show quick badges in the overlay instead of only raw best-move suggestions.
+## Setup ECO data
 
-3. **Opening explorer + repertoire mode**
-   - Detect opening names from position/FEN and suggest repertoire lines.
-   - Let users save preferred lines and review them later.
+1. Install dependencies:
+   - `npm install`
+2. Sync ECO data from the package into extension assets:
+   - `npm run eco:sync`
+3. Build extension:
+   - `npm run build`
 
-4. **Post-game summary panel**
-   - Generate a short report: critical moments, biggest missed tactics, and best alternative lines.
-   - Export summary as PGN comments or copyable text.
+This writes the package dataset to `public/eco.json`, and the build copies it to `dist/eco.json`.
 
-5. **Practice mode from current position**
-   - “Play the best move” drills from real game positions.
-   - Track streak/accuracy locally and repeat missed motifs.
+## Runtime behavior
 
-6. **Hotkeys and quick actions**
-   - Add keyboard shortcuts for analyze toggle, next/prev suggestion, and show top line.
-   - Improves usability during fast games.
-
-7. **Performance and battery profile options**
-   - Add CPU usage presets (Low/Balanced/Max), pause analysis on hidden tab, and mobile-friendly defaults.
-   - Important because Stockfish can be expensive in browser contexts.
-
-8. **Privacy-first telemetry (optional)**
-   - If analytics are needed, provide clear opt-in and only collect anonymous usage events.
-   - Display exactly what is collected in settings.
-
-## Suggested implementation order
-
-1. MultiPV + time controls
-2. Move-quality classification (blunder/mistake/inaccuracy)
-3. Post-game summary
-4. Opening explorer
-5. Practice mode
-
-This order delivers immediate user value while building toward deeper training workflows.
+- The extension loads `eco.json` at runtime via `chrome.runtime.getURL('eco.json')`.
+- Opening matching first tries current position FEN, then falls back to move-sequence matching.
+- Overlay shows ECO code, opening name, detected recent moves, and continuation hints.

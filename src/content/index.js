@@ -15,6 +15,7 @@ const logger = new Logger('Content');
 class ChessAssistant {
     constructor() {
         this.analysisService = new AnalysisService();
+        this.openingExplorer = new OpeningExplorer();
         this.overlay = new Overlay(this.analysisService);
         this.moveObserver = null;
         this.lastMoveCount = 0;
@@ -29,6 +30,7 @@ class ChessAssistant {
         logger.log('Initializing Chess Assistant...');
 
         await this.loadSettings();
+        await this.openingExplorer.initialize();
         await this.delay(2000); // Wait for page to load
 
         this.analysisService.connect();
@@ -72,13 +74,17 @@ class ChessAssistant {
         }
 
         const bestLine = this.topMoves[0];
-        const fen = this.analysisService.lastFen;
-        const opening = OpeningExplorer.getOpening(fen);
+        const opening = this.openingExplorer.findOpening({
+            fen: this.analysisService.lastFen,
+            playedMoves: this.getPlayedMoves()
+        });
 
         const entry = {
+            eco: opening.eco,
             name: opening.name,
             line: bestLine.move,
-            fen,
+            fen: this.analysisService.lastFen,
+            playedMoves: opening.playedMoves,
             savedAt: Date.now()
         };
 
@@ -190,17 +196,40 @@ class ChessAssistant {
         this.analysisService.setAnalyzing(false);
     }
 
-    updateOpeningExplorer() {
-        const opening = OpeningExplorer.getOpening(this.analysisService.lastFen);
+    getPlayedMoves() {
+        const nodes = document.querySelectorAll('.move-list .node, wc-simple-move-list .node');
+        const moves = [];
 
-        const suggestedLines = opening.lines || [];
+        nodes.forEach((node) => {
+            const text = (node.textContent || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (!text || /^\d+\.?$/.test(text) || text === '...') {
+                return;
+            }
+
+            moves.push(text);
+        });
+
+        return moves;
+    }
+
+    updateOpeningExplorer() {
+        const opening = this.openingExplorer.findOpening({
+            fen: this.analysisService.lastFen,
+            playedMoves: this.getPlayedMoves()
+        });
+
+        const suggestedLines = [...(opening.lines || [])];
         if (this.topMoves[0]) {
             suggestedLines.unshift(`Engine best move here: ${this.topMoves[0].move}`);
         }
 
         this.overlay.setOpening({
-            name: opening.name,
-            lines: suggestedLines.slice(0, 4)
+            name: `${opening.eco} • ${opening.name}`,
+            lines: suggestedLines.slice(0, 4),
+            playedMoves: opening.playedMoves
         });
     }
 

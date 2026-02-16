@@ -19,7 +19,8 @@ export class Overlay {
         this.topMoves = [];
         this.currentOpening = {
             name: 'Opening not recognized yet',
-            lines: ['Run analysis to detect opening context']
+            lines: ['Run analysis to detect opening context'],
+            playedMoves: []
         };
         this.repertoireLines = [];
         this.onSaveRepertoireCallback = null;
@@ -136,6 +137,7 @@ export class Overlay {
             .map(line => `<li>${line}</li>`)
             .join('');
 
+        const playedMoves = (this.currentOpening.playedMoves || []).slice(-10).join(' ');
         const repertoireItems = this.repertoireLines.length
             ? this.repertoireLines
                 .slice(0, 5)
@@ -152,6 +154,7 @@ export class Overlay {
             <div class="opening-block">
                 <div class="opening-title">📚 Opening Explorer</div>
                 <div class="opening-name">${this.currentOpening.name}</div>
+                <div class="opening-played" title="Detected player moves">${playedMoves || 'No moves detected yet'}</div>
                 <ul class="opening-lines">${lines}</ul>
                 <button id="chess-assistant-save-line" class="save-line-btn">Save best line</button>
             </div>
