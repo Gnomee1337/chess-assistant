@@ -590,8 +590,9 @@
     // Load settings
     function loadSettings() {
         chrome.storage.sync.get(['depth', 'enabled', 'autoAnalyze'], function (result) {
-            if (result && result.depth) {
+            if (result && result.depth !== undefined) {
                 currentDepth = result.depth;
+                console.log('Chess Assistant - Loaded depth:', currentDepth);
             }
             if (result && result.enabled !== undefined) {
                 isEnabled = result.enabled;

@@ -14,7 +14,8 @@ class StockfishWrapper {
 
     loadStockfishFromCDN() {
         const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+        // script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+        script.src = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
         script.onload = () => {
             if (typeof STOCKFISH === 'function') {
                 this.engine = STOCKFISH();

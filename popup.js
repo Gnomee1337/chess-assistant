@@ -8,9 +8,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Load saved settings
     chrome.storage.sync.get(['depth'], function (result) {
-        if (result && result.depth) {
-            depthSlider.value = result.depth;
-            depthValue.textContent = result.depth;
+        if (result && result.depth !== undefined) {
+            const savedDepth = result.depth;
+            depthSlider.value = savedDepth;
+            depthValue.textContent = savedDepth;
+            console.log('Chess Assistant - Loaded depth:', savedDepth);
+        } else {
+            console.log('Chess Assistant - No saved depth, using default: 15');
         }
     });
 
@@ -27,6 +31,13 @@ document.addEventListener('DOMContentLoaded', function () {
             depth: depth,
             enabled: true
         }, function () {
+            if (chrome.runtime.lastError) {
+                console.error('Chess Assistant - Save error:', chrome.runtime.lastError);
+                return;
+            }
+
+            console.log('Chess Assistant - Saved depth:', depth);
+
             // Show success message
             status.classList.add('show');
             saveBtn.textContent = '✓ Saved!';
