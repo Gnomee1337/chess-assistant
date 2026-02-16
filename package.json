@@ -4,12 +4,21 @@
     "description": "Free chess analysis assistant for Chess.com using Stockfish",
     "scripts": {
         "build": "node scripts/build.js",
-        "build:prod": "NODE_ENV=production node scripts/build.js",
+        "build:prod": "NODE_ENV=production node scripts/build.js --prod",
+        "build:firefox": "node scripts/build.js --firefox",
+        "build:firefox:prod": "NODE_ENV=production node scripts/build.js --firefox --prod",
+        "build:chrome": "node scripts/build.js --chrome",
+        "build:chrome:prod": "NODE_ENV=production node scripts/build.js --chrome --prod",
+        "build:debug": "node scripts/build.js --debug",
         "watch": "node scripts/build.js --watch",
+        "watch:firefox": "node scripts/build.js --watch --firefox",
         "clean": "node scripts/build.js --clean",
         "package": "npm run build:prod && node scripts/build.js --package",
+        "package:firefox": "npm run build:firefox:prod && node scripts/build.js --firefox --package",
+        "package:chrome": "npm run build:chrome:prod && node scripts/build.js --chrome --package",
         "lint": "eslint src/**/*.js",
-        "lint:fix": "eslint src/**/*.js --fix"
+        "lint:fix": "eslint src/**/*.js --fix",
+        "test": "echo \"No tests yet\" && exit 0"
     },
     "devDependencies": {
         "archiver": "^6.0.1",
@@ -22,8 +31,17 @@
         "chess.com",
         "stockfish",
         "analysis",
-        "chrome-extension"
+        "chrome-extension",
+        "firefox-addon",
+        "webextension"
     ],
     "author": "Your Name",
-    "license": "MIT"
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/yourusername/chess-assistant"
+    },
+    "bugs": {
+        "url": "https://github.com/yourusername/chess-assistant/issues"
+    }
 }
