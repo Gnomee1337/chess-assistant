@@ -27,7 +27,7 @@
       ],
       "js": [
         "browser-polyfill.js",
-        "index.js"
+        "content.js"
       ],
       "css": [
         "overlay.css"
