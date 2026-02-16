@@ -309,6 +309,7 @@ async function bundleSource() {
     // Copy popup files
     const popupJS = path.join(SRC_DIR, 'popup', 'popup.js');
     const popupHTML = path.join(SRC_DIR, 'popup', 'popup.html');
+    const popupCSS = path.join(SRC_DIR, 'popup', 'popup.css');
 
     if (await fs.pathExists(popupJS)) {
         await fs.copy(popupJS, path.join(DIST_DIR, 'popup.js'));
@@ -318,6 +319,11 @@ async function bundleSource() {
     if (await fs.pathExists(popupHTML)) {
         await fs.copy(popupHTML, path.join(DIST_DIR, 'popup.html'));
         logSuccess('Copied popup.html');
+    }
+
+    if (await fs.pathExists(popupCSS)) {
+        await fs.copy(popupCSS, path.join(DIST_DIR, 'popup.css'));
+        logSuccess('Copied popup.css');
     }
 }
 
