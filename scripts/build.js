@@ -78,7 +78,6 @@ async function copyPublicFiles() {
     logStep('Copying public files...');
 
     const filesToCopy = [
-        'popup.html',
         'browser-polyfill.js'
     ];
 
@@ -112,8 +111,9 @@ async function copyIcon() {
     logStep('Handling icon...');
 
     // Check for PNG icon first
-    const pngIcon = path.join(PUBLIC_DIR, 'icon.png');
-    const svgIcon = path.join(PUBLIC_DIR, 'icon.svg');
+    const pngIcon = path.join(PUBLIC_DIR, 'icons', 'icon.png');
+    const svgIcon = path.join(PUBLIC_DIR, 'icons', 'icon.svg');
+
 
     if (await fs.pathExists(pngIcon)) {
         await fs.copy(pngIcon, path.join(DIST_DIR, 'icon.png'));
@@ -139,8 +139,11 @@ async function copyStockfishFiles() {
     let copiedCount = 0;
 
     for (const file of stockfishFiles) {
-        const src = path.join(PUBLIC_DIR, file);
+        const rootPath = path.join(PUBLIC_DIR, file);
+        const nestedPath = path.join(PUBLIC_DIR, 'stockfish', file);
+        const src = (await fs.pathExists(rootPath)) ? rootPath : nestedPath;
         const dest = path.join(DIST_DIR, file);
+
 
         if (await fs.pathExists(src)) {
             await fs.copy(src, dest);
