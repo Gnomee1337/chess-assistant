@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "name": "Chess Assistant for Chess.com",
+  "version": "1.0",
+  "description": "Free chess analysis assistant using Stockfish for chess.com",
+  "permissions": [
+    "storage",
+    "https://www.chess.com/*"
+  ],
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.chess.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "stockfish.js",
+    "stockfish.wasm"
+  ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon.png"
+    }
+  },
+  "icons": {
+    "48": "icon.png"
+  }
+}
