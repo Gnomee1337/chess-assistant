@@ -299,18 +299,12 @@ async function bundleSource() {
 
     // Build content script from refactored modules
     const builtRefactoredContent = await buildContentScriptBundle();
-    if (builtRefactoredContent) {
-        logSuccess('Built content.js from src/content modules');
-    } else {
-        const oldContent = path.join(ROOT_DIR, 'content.js');
-        if (await fs.pathExists(oldContent)) {
-            await fs.copy(oldContent, path.join(DIST_DIR, 'content.js'));
-            logWarning('Fell back to legacy root content.js');
-        } else {
-            logError('No content script source found');
-            throw new Error('Missing content script source');
-        }
+    if (!builtRefactoredContent) {
+        logError('Missing src/content/index.js');
+        throw new Error('Cannot build content script from refactored source');
     }
+
+    logSuccess('Built content.js from src/content modules');
 
     // Copy popup files
     const popupJS = path.join(SRC_DIR, 'popup', 'popup.js');
