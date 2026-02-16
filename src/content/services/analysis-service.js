@@ -14,6 +14,7 @@ export class AnalysisService {
         this.port = null;
         this.isAnalyzing = false;
         this.depth = 15;
+        this.lastFen = null;
         this.onMoveCallback = null;
         this.onErrorCallback = null;
     }
@@ -104,6 +105,7 @@ export class AnalysisService {
         }
 
         logger.log('Analyzing position:', fen);
+        this.lastFen = fen;
         this.isAnalyzing = true;
 
         this.port.postMessage({

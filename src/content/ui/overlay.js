@@ -17,6 +17,13 @@ export class Overlay {
         this.isCollapsed = false;
         this.isHidden = false;
         this.topMoves = [];
+        this.currentOpening = {
+            name: 'Opening not recognized yet',
+            lines: ['Run analysis to detect opening context']
+        };
+        this.repertoireLines = [];
+        this.onSaveRepertoireCallback = null;
+        this.onRemoveRepertoireCallback = null;
         this.dragState = {
             isDragging: false,
             offsetX: 0,
@@ -44,21 +51,15 @@ export class Overlay {
         this.setInitialPosition();
         this.attachEventListeners();
         this.refreshControls();
+        this.renderOpeningExplorer();
         logger.log('Overlay created');
     }
 
-    /**
-     * Refresh button labels and states from current settings
-     */
     refreshControls() {
         this.updateEnabledButton();
         this.updateAutoButton();
     }
 
-    /**
-     * Get HTML template for overlay
-     * @returns {string} HTML string
-     */
     getTemplate() {
         return `
             <div class="chess-assistant-header">
@@ -72,12 +73,10 @@ export class Overlay {
             <div id="chess-assistant-moves" class="moves-container">
                 <div class="loading">Auto-analysis enabled</div>
             </div>
+            <div id="chess-assistant-opening" class="opening-container"></div>
         `;
     }
 
-    /**
-     * Attach event listeners to buttons
-     */
     attachEventListeners() {
         document.getElementById('chess-assistant-toggle').addEventListener('click', () => this.toggleEnabled());
         document.getElementById('chess-assistant-auto').addEventListener('click', () => this.toggleAutoAnalyze());
@@ -91,9 +90,76 @@ export class Overlay {
             header.addEventListener('mousedown', (event) => this.startDrag(event));
         }
 
+        this.element.addEventListener('click', (event) => {
+            const saveBtn = event.target.closest('#chess-assistant-save-line');
+            if (saveBtn && this.onSaveRepertoireCallback) {
+                this.onSaveRepertoireCallback();
+            }
+
+            const removeBtn = event.target.closest('[data-repertoire-index]');
+            if (removeBtn && this.onRemoveRepertoireCallback) {
+                const index = parseInt(removeBtn.getAttribute('data-repertoire-index'), 10);
+                if (!Number.isNaN(index)) {
+                    this.onRemoveRepertoireCallback(index);
+                }
+            }
+        });
+
         document.addEventListener('mousemove', (event) => this.onDrag(event));
         document.addEventListener('mouseup', () => this.stopDrag());
         window.addEventListener('resize', () => this.handleResize());
+    }
+
+    onSaveRepertoire(callback) {
+        this.onSaveRepertoireCallback = callback;
+    }
+
+    onRemoveRepertoire(callback) {
+        this.onRemoveRepertoireCallback = callback;
+    }
+
+    setOpening(opening) {
+        this.currentOpening = opening;
+        this.renderOpeningExplorer();
+    }
+
+    setRepertoireLines(lines) {
+        this.repertoireLines = lines;
+        this.renderOpeningExplorer();
+    }
+
+    renderOpeningExplorer() {
+        const container = document.getElementById('chess-assistant-opening');
+        if (!container) return;
+
+        const lines = (this.currentOpening.lines || [])
+            .map(line => `<li>${line}</li>`)
+            .join('');
+
+        const repertoireItems = this.repertoireLines.length
+            ? this.repertoireLines
+                .slice(0, 5)
+                .map((item, index) => `
+                    <li>
+                        <span>${item.name}: ${item.line}</span>
+                        <button class="repertoire-remove" data-repertoire-index="${index}" title="Remove line">×</button>
+                    </li>
+                `)
+                .join('')
+            : '<li class="repertoire-empty">No saved repertoire lines yet</li>';
+
+        container.innerHTML = `
+            <div class="opening-block">
+                <div class="opening-title">📚 Opening Explorer</div>
+                <div class="opening-name">${this.currentOpening.name}</div>
+                <ul class="opening-lines">${lines}</ul>
+                <button id="chess-assistant-save-line" class="save-line-btn">Save best line</button>
+            </div>
+            <div class="repertoire-block">
+                <div class="opening-title">⭐ Repertoire</div>
+                <ul class="repertoire-list">${repertoireItems}</ul>
+            </div>
+        `;
     }
 
     setInitialPosition() {
@@ -191,9 +257,6 @@ export class Overlay {
         this.setPosition(overlayRect.left, overlayRect.top);
     }
 
-    /**
-     * Toggle assistant enabled state
-     */
     toggleEnabled() {
         this.isEnabled = !this.isEnabled;
         this.updateEnabledButton();
@@ -207,9 +270,6 @@ export class Overlay {
         chrome.storage.sync.set({ enabled: this.isEnabled });
     }
 
-    /**
-     * Toggle auto-analyze mode
-     */
     toggleAutoAnalyze() {
         this.autoAnalyze = !this.autoAnalyze;
         this.updateAutoButton();
@@ -223,9 +283,6 @@ export class Overlay {
         chrome.storage.sync.set({ autoAnalyze: this.autoAnalyze });
     }
 
-    /**
-     * Update enabled button appearance
-     */
     updateEnabledButton() {
         const btn = document.getElementById('chess-assistant-toggle');
         if (!btn) return;
@@ -234,9 +291,6 @@ export class Overlay {
         btn.classList.toggle('off', !this.isEnabled);
     }
 
-    /**
-     * Update auto-analyze button appearance
-     */
     updateAutoButton() {
         const btn = document.getElementById('chess-assistant-auto');
         if (!btn) return;
@@ -245,9 +299,6 @@ export class Overlay {
         btn.classList.toggle('off', !this.autoAnalyze);
     }
 
-    /**
-     * Trigger analysis
-     */
     async analyze() {
         if (!this.isEnabled) return;
 
@@ -255,10 +306,6 @@ export class Overlay {
         await this.analysisService.analyze();
     }
 
-    /**
-     * Display top moves
-     * @param {Array} moves - Array of move objects {move, score, mateIn}
-     */
     displayMoves(moves) {
         const container = document.getElementById('chess-assistant-moves');
         if (!container) return;
@@ -284,7 +331,6 @@ export class Overlay {
 
         container.innerHTML = html;
 
-        // Add hover listeners
         container.querySelectorAll('.move-item').forEach(item => {
             item.addEventListener('mouseenter', () => {
                 const move = item.getAttribute('data-move');
@@ -297,11 +343,6 @@ export class Overlay {
         });
     }
 
-    /**
-     * Format score for display
-     * @param {Object} moveData - Move data object
-     * @returns {string} Formatted score
-     */
     formatScore(moveData) {
         if (Math.abs(moveData.score) > 100) {
             if (moveData.mateIn !== undefined) {
@@ -316,17 +357,10 @@ export class Overlay {
         return moveData.score > 0 ? `+${moveData.score.toFixed(2)}` : moveData.score.toFixed(2);
     }
 
-    /**
-     * Show loading message
-     */
     showLoading() {
         this.updateMessage('Analyzing position...');
     }
 
-    /**
-     * Show error message
-     * @param {string} message - Error message
-     */
     showError(message) {
         const container = document.getElementById('chess-assistant-moves');
         if (container) {
@@ -334,10 +368,6 @@ export class Overlay {
         }
     }
 
-    /**
-     * Update general message
-     * @param {string} message - Message to display
-     */
     updateMessage(message) {
         const container = document.getElementById('chess-assistant-moves');
         if (container) {

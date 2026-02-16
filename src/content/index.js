@@ -6,6 +6,7 @@
 import { Logger } from '../shared/logger.js';
 import { StorageService } from '../shared/storage.js';
 import { AnalysisService } from './services/analysis-service.js';
+import { OpeningExplorer } from './services/opening-explorer.js';
 import { Overlay } from './ui/overlay.js';
 import { SELECTORS, STORAGE_KEYS } from '../shared/constants.js';
 
@@ -18,6 +19,7 @@ class ChessAssistant {
         this.moveObserver = null;
         this.lastMoveCount = 0;
         this.topMoves = [];
+        this.repertoireLines = [];
     }
 
     /**
@@ -31,6 +33,8 @@ class ChessAssistant {
 
         this.analysisService.connect();
         this.overlay.create();
+        this.overlay.setRepertoireLines(this.repertoireLines);
+        this.setupOverlayCallbacks();
         this.setupAnalysisCallbacks();
         this.setupMoveObserver();
         this.setupStorageListener();
@@ -45,13 +49,69 @@ class ChessAssistant {
         const settings = await StorageService.getMultiple([
             STORAGE_KEYS.DEPTH,
             STORAGE_KEYS.ENABLED,
-            STORAGE_KEYS.AUTO_ANALYZE
+            STORAGE_KEYS.AUTO_ANALYZE,
+            STORAGE_KEYS.REPERTOIRE_LINES
         ]);
 
         this.analysisService.setDepth(settings.depth);
         this.overlay.isEnabled = settings.enabled;
         this.overlay.autoAnalyze = settings.autoAnalyze;
+        this.repertoireLines = settings.repertoireLines || [];
         this.overlay.refreshControls();
+    }
+
+    setupOverlayCallbacks() {
+        this.overlay.onSaveRepertoire(() => this.saveCurrentLineToRepertoire());
+        this.overlay.onRemoveRepertoire((index) => this.removeRepertoireLine(index));
+    }
+
+    saveCurrentLineToRepertoire() {
+        if (!this.topMoves.length) {
+            this.overlay.updateMessage('Run analysis first to save a line');
+            return;
+        }
+
+        const bestLine = this.topMoves[0];
+        const fen = this.analysisService.lastFen;
+        const opening = OpeningExplorer.getOpening(fen);
+
+        const entry = {
+            name: opening.name,
+            line: bestLine.move,
+            fen,
+            savedAt: Date.now()
+        };
+
+        const duplicate = this.repertoireLines.some(item => item.fen === entry.fen && item.line === entry.line);
+        if (duplicate) {
+            this.overlay.updateMessage('This line is already saved in repertoire');
+            return;
+        }
+
+        this.repertoireLines = [entry, ...this.repertoireLines].slice(0, 50);
+        StorageService.set(STORAGE_KEYS.REPERTOIRE_LINES, this.repertoireLines)
+            .then(() => {
+                this.overlay.setRepertoireLines(this.repertoireLines);
+                this.overlay.updateMessage('Saved line to repertoire');
+            })
+            .catch(() => {
+                this.overlay.showError('Could not save repertoire line');
+            });
+    }
+
+    removeRepertoireLine(index) {
+        if (index < 0 || index >= this.repertoireLines.length) {
+            return;
+        }
+
+        this.repertoireLines.splice(index, 1);
+        StorageService.set(STORAGE_KEYS.REPERTOIRE_LINES, this.repertoireLines)
+            .then(() => {
+                this.overlay.setRepertoireLines(this.repertoireLines);
+            })
+            .catch(() => {
+                this.overlay.showError('Could not update repertoire');
+            });
     }
 
     /**
@@ -92,19 +152,19 @@ class ChessAssistant {
 
         if (!depthMatch || !multipvMatch || !moveMatch) return;
 
-        const depth = parseInt(depthMatch[1]);
-        const multipv = parseInt(multipvMatch[1]);
+        const depth = parseInt(depthMatch[1], 10);
+        const multipv = parseInt(multipvMatch[1], 10);
         const move = moveMatch[1];
 
         if (depth === this.analysisService.depth) {
             let score;
-            let mateIn = undefined;
+            let mateIn;
 
             if (mateMatch) {
-                mateIn = parseInt(mateMatch[1]);
+                mateIn = parseInt(mateMatch[1], 10);
                 score = mateIn > 0 ? 1000 : -1000;
             } else if (scoreMatch) {
-                score = parseInt(scoreMatch[1]) / 100.0;
+                score = parseInt(scoreMatch[1], 10) / 100.0;
             } else {
                 return;
             }
@@ -120,13 +180,28 @@ class ChessAssistant {
         if (this.topMoves.length > 0) {
             const validMoves = this.topMoves.filter(m => m !== undefined);
             validMoves.sort((a, b) => b.score - a.score);
-            this.overlay.displayMoves(validMoves.slice(0, 3));
+            this.topMoves = validMoves.slice(0, 3);
+            this.overlay.displayMoves(this.topMoves);
+            this.updateOpeningExplorer();
         } else {
             this.overlay.showError('No moves found');
         }
 
-        this.topMoves = [];
         this.analysisService.setAnalyzing(false);
+    }
+
+    updateOpeningExplorer() {
+        const opening = OpeningExplorer.getOpening(this.analysisService.lastFen);
+
+        const suggestedLines = opening.lines || [];
+        if (this.topMoves[0]) {
+            suggestedLines.unshift(`Engine best move here: ${this.topMoves[0].move}`);
+        }
+
+        this.overlay.setOpening({
+            name: opening.name,
+            lines: suggestedLines.slice(0, 4)
+        });
     }
 
     /**
@@ -171,7 +246,7 @@ class ChessAssistant {
      * Setup storage change listener
      */
     setupStorageListener() {
-        StorageService.onChange((changes, namespace) => {
+        StorageService.onChange((changes) => {
             if (changes.depth) {
                 this.analysisService.setDepth(changes.depth.newValue);
             }
@@ -182,6 +257,10 @@ class ChessAssistant {
             if (changes.autoAnalyze !== undefined) {
                 this.overlay.autoAnalyze = changes.autoAnalyze.newValue;
                 this.overlay.updateAutoButton();
+            }
+            if (changes.repertoireLines !== undefined) {
+                this.repertoireLines = changes.repertoireLines.newValue || [];
+                this.overlay.setRepertoireLines(this.repertoireLines);
             }
         });
     }
