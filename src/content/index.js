@@ -8,6 +8,7 @@ import { StorageService } from '../shared/storage.js';
 import { AnalysisService } from './services/analysis-service.js';
 import { OpeningExplorer } from './services/opening-explorer.js';
 import { Overlay } from './ui/overlay.js';
+import { MoveHighlighter } from './chess/move-highlighter.js';
 import { SELECTORS, STORAGE_KEYS } from '../shared/constants.js';
 
 const logger = new Logger('Content');
@@ -21,6 +22,8 @@ class ChessAssistant {
         this.lastMoveCount = 0;
         this.topMoves = [];
         this.repertoireLines = [];
+        this.highlightColor = null;
+        this.arrowColor = null;
     }
 
     /**
@@ -52,13 +55,21 @@ class ChessAssistant {
             STORAGE_KEYS.DEPTH,
             STORAGE_KEYS.ENABLED,
             STORAGE_KEYS.AUTO_ANALYZE,
-            STORAGE_KEYS.REPERTOIRE_LINES
+            STORAGE_KEYS.REPERTOIRE_LINES,
+            STORAGE_KEYS.HIGHLIGHT_COLOR,
+            STORAGE_KEYS.ARROW_COLOR
         ]);
 
         this.analysisService.setDepth(settings.depth);
         this.overlay.isEnabled = settings.enabled;
         this.overlay.autoAnalyze = settings.autoAnalyze;
         this.repertoireLines = settings.repertoireLines || [];
+        this.highlightColor = settings.highlightColor;
+        this.arrowColor = settings.arrowColor;
+        MoveHighlighter.setColors({
+            highlightColor: this.highlightColor,
+            arrowColor: this.arrowColor
+        });
         this.overlay.refreshControls();
     }
 
@@ -290,6 +301,14 @@ class ChessAssistant {
             if (changes.repertoireLines !== undefined) {
                 this.repertoireLines = changes.repertoireLines.newValue || [];
                 this.overlay.setRepertoireLines(this.repertoireLines);
+            }
+            if (changes.highlightColor !== undefined || changes.arrowColor !== undefined) {
+                this.highlightColor = changes.highlightColor ? changes.highlightColor.newValue : this.highlightColor;
+                this.arrowColor = changes.arrowColor ? changes.arrowColor.newValue : this.arrowColor;
+                MoveHighlighter.setColors({
+                    highlightColor: this.highlightColor,
+                    arrowColor: this.arrowColor
+                });
             }
         });
     }

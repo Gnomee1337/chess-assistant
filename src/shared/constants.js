@@ -9,7 +9,9 @@ export const DEFAULT_SETTINGS = {
     depth: 15,
     enabled: true,
     autoAnalyze: true,
-    repertoireLines: []
+    repertoireLines: [],
+    highlightColor: '#9bc700',
+    arrowColor: '#9bc700'
 };
 
 export const ANALYSIS_DEPTH = {
@@ -28,8 +30,8 @@ export const PIECE_CHARS = {
 export const FILES = { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5, g: 6, h: 7 };
 
 export const COLORS = {
-    HIGHLIGHT: 'rgb(155, 199, 0)',
-    ARROW: 'rgb(155, 199, 0)',
+    HIGHLIGHT: '#9bc700',
+    ARROW: '#9bc700',
     ERROR: '#ff6b6b'
 };
 
@@ -51,5 +53,7 @@ export const STORAGE_KEYS = {
     DEPTH: 'depth',
     ENABLED: 'enabled',
     AUTO_ANALYZE: 'autoAnalyze',
-    REPERTOIRE_LINES: 'repertoireLines'
+    REPERTOIRE_LINES: 'repertoireLines',
+    HIGHLIGHT_COLOR: 'highlightColor',
+    ARROW_COLOR: 'arrowColor'
 };
