@@ -8,11 +8,11 @@
     let isAnalyzing = false;
     let currentDepth = 15;
     let isEnabled = true;
-    let autoAnalyze = true; // NEW: Auto-analyze toggle
+    let autoAnalyze = true;
     let overlay = null;
     let topMoves = [];
-    let lastMoveCount = 0; // NEW: Track move count
-    let moveObserver = null; // NEW: Mutation observer
+    let lastMoveCount = 0;
+    let moveObserver = null;
 
     // Connect to background script
     function connectToBackground() {
@@ -137,7 +137,6 @@
     }
 
     // Draw arrow on the board
-    // Draw arrow on the board - FIXED
     function drawArrow(uci) {
         try {
             const board = document.querySelector('wc-chess-board');
@@ -168,7 +167,7 @@
             arrow.setAttribute('stroke-linecap', 'round');
             arrow.setAttribute('marker-end', 'url(#arrowhead-green)');
             arrow.setAttribute('opacity', '0.8');
-            arrow.setAttribute('class', 'chess-assistant-arrow'); // FIXED: Use setAttribute instead of className
+            arrow.setAttribute('class', 'chess-assistant-arrow');
 
             // Create arrowhead marker if it doesn't exist
             let defs = arrowsSvg.querySelector('defs');
@@ -210,9 +209,44 @@
         arrows.forEach(a => a.remove());
     }
 
+    // Validate FEN string
+    function validateFEN(fen) {
+        if (!fen || typeof fen !== 'string') return false;
+
+        const parts = fen.split(' ');
+        if (parts.length < 2) return false;
+
+        const position = parts[0];
+        const ranks = position.split('/');
+
+        // Should have 8 ranks
+        if (ranks.length !== 8) return false;
+
+        // Check each rank
+        for (let rank of ranks) {
+            let squares = 0;
+            for (let char of rank) {
+                if ('12345678'.includes(char)) {
+                    squares += parseInt(char);
+                } else if ('pnbrqkPNBRQK'.includes(char)) {
+                    squares += 1;
+                } else {
+                    return false;
+                }
+            }
+            if (squares !== 8) return false;
+        }
+
+        // Turn should be 'w' or 'b'
+        if (parts[1] !== 'w' && parts[1] !== 'b') return false;
+
+        return true;
+    }
+
     // Get current position FEN from chess.com
     function getCurrentFEN() {
         try {
+            // Try to get FEN from chess.com API
             if (typeof window.chessboard !== 'undefined' && window.chessboard) {
                 try {
                     const board = window.chessboard;
@@ -220,28 +254,41 @@
                         const rel = board.getRelationship();
                         if (rel && rel.game && typeof rel.game.getFEN === 'function') {
                             const fen = rel.game.getFEN();
-                            if (fen) return fen;
+                            if (fen && validateFEN(fen)) {
+                                console.log('Chess Assistant - Got FEN from API:', fen);
+                                return fen;
+                            }
                         }
                     }
                     if (typeof board.getFEN === 'function') {
                         const fen = board.getFEN();
-                        if (fen) return fen;
+                        if (fen && validateFEN(fen)) {
+                            console.log('Chess Assistant - Got FEN from board API:', fen);
+                            return fen;
+                        }
                     }
-                } catch (e) { }
+                } catch (e) {
+                    console.log('Chess Assistant - API method failed:', e);
+                }
             }
 
+            // Fallback: parse from DOM
             const fen = parseBoardFromDOM();
-            if (fen) return fen;
+            if (fen && validateFEN(fen)) {
+                console.log('Chess Assistant - Parsed FEN from DOM:', fen);
+                return fen;
+            }
 
-            return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            console.error('Chess Assistant - Could not get valid FEN');
+            return null;
 
         } catch (error) {
             console.error('Chess Assistant - Error getting FEN:', error);
-            return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            return null;
         }
     }
 
-    // Parse board from DOM - FIXED VERSION
+    // Parse board from DOM
     function parseBoardFromDOM() {
         try {
             const board = Array(8).fill(null).map(() => Array(8).fill(''));
@@ -295,6 +342,7 @@
                 return null;
             }
 
+            // Build FEN string
             let fen = '';
             for (let rank = 0; rank < 8; rank++) {
                 let empty = 0;
@@ -313,6 +361,7 @@
                 if (rank < 7) fen += '/';
             }
 
+            // Determine whose turn it is
             let toMove = 'w';
             try {
                 const lastMove = document.querySelector('.move-list .node.selected');
@@ -329,9 +378,7 @@
 
             fen += ` ${toMove} KQkq - 0 1`;
 
-            console.log('Chess Assistant - Parsed FEN:', fen);
-
-            return fen.includes('/') ? fen : null;
+            return fen.includes('/') && fen.split('/').length === 8 ? fen : null;
 
         } catch (error) {
             console.error('Chess Assistant - Error parsing board:', error);
@@ -341,7 +388,10 @@
 
     // Analyze current position
     function analyzePosition() {
-        if (!isEnabled || isAnalyzing) return;
+        if (!isEnabled || isAnalyzing) {
+            console.log('Chess Assistant - Skipping analysis (enabled:', isEnabled, 'analyzing:', isAnalyzing, ')');
+            return;
+        }
 
         if (!backgroundPort) {
             connectToBackground();
@@ -351,7 +401,13 @@
 
         const fen = getCurrentFEN();
         if (!fen) {
-            showError('Could not read board position');
+            showError('Could not read board position. Try refreshing the page.');
+            return;
+        }
+
+        if (!validateFEN(fen)) {
+            showError('Invalid board position detected');
+            console.error('Chess Assistant - Invalid FEN:', fen);
             return;
         }
 
@@ -371,7 +427,7 @@
         });
     }
 
-    // NEW: Watch for move changes
+    // Setup move observer to auto-analyze
     function setupMoveObserver() {
         const moveList = document.querySelector('.move-list, wc-simple-move-list');
         if (!moveList) {
@@ -392,7 +448,7 @@
                 lastMoveCount = currentMoveCount;
                 console.log('Chess Assistant - New move detected, auto-analyzing...');
 
-                // Wait a bit for the board to update
+                // Wait for board to update
                 setTimeout(() => {
                     if (!isAnalyzing) {
                         analyzePosition();
@@ -434,11 +490,10 @@
         document.getElementById('chess-assistant-auto').addEventListener('click', toggleAutoAnalyze);
         document.getElementById('chess-assistant-analyze').addEventListener('click', analyzePosition);
 
-        // Update auto button state
         updateAutoButton();
     }
 
-    // NEW: Toggle auto-analyze
+    // Toggle auto-analyze
     function toggleAutoAnalyze() {
         autoAnalyze = !autoAnalyze;
         updateAutoButton();
@@ -450,11 +505,10 @@
                 : '<div class="loading">Click "Analyze" to get move suggestions</div>';
         }
 
-        // Save setting
         chrome.storage.sync.set({ autoAnalyze: autoAnalyze });
     }
 
-    // NEW: Update auto button appearance
+    // Update auto button appearance
     function updateAutoButton() {
         const autoBtn = document.getElementById('chess-assistant-auto');
         if (autoBtn) {
@@ -476,6 +530,8 @@
                 ? (autoAnalyze ? '<div class="loading">Auto-analysis enabled</div>' : '<div class="loading">Click "Analyze" to get move suggestions</div>')
                 : '<div class="loading">Assistant disabled</div>';
         }
+
+        chrome.storage.sync.set({ enabled: isEnabled });
     }
 
     // Display top moves
@@ -574,7 +630,7 @@
         setTimeout(() => {
             connectToBackground();
             createOverlay();
-            setupMoveObserver(); // NEW: Start watching for moves
+            setupMoveObserver();
             console.log('Chess Assistant - Ready!');
         }, 2000);
     }

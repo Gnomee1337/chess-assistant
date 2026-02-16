@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Load saved settings
     chrome.storage.sync.get(['depth'], function (result) {
-        if (result.depth) {
+        if (result && result.depth) {
             depthSlider.value = result.depth;
             depthValue.textContent = result.depth;
         }
