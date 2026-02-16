@@ -18,7 +18,8 @@
         "package:chrome": "npm run build:chrome:prod && node scripts/build.js --chrome --package",
         "lint": "eslint src/**/*.js",
         "lint:fix": "eslint src/**/*.js --fix",
-        "test": "echo \"No tests yet\" && exit 0"
+        "test": "echo \"No tests yet\" && exit 0",
+        "eco:sync": "node scripts/sync-eco.js"
     },
     "devDependencies": {
         "archiver": "^6.0.1",
@@ -43,5 +44,8 @@
     },
     "bugs": {
         "url": "https://github.com/yourusername/chess-assistant/issues"
+    },
+    "dependencies": {
+        "@chess-openings/eco.json": "^1.0.6"
     }
 }
