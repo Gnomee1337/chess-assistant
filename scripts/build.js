@@ -176,7 +176,11 @@ async function copyPublicFiles() {
 
     const filesToCopy = [
         'browser-polyfill.js',
-        'eco.json'
+        'ecoA.json',
+        'ecoB.json',
+        'ecoC.json',
+        'ecoD.json',
+        'ecoE.json'
     ];
 
     for (const file of filesToCopy) {

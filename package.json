@@ -18,8 +18,7 @@
         "package:chrome": "npm run build:chrome:prod && node scripts/build.js --chrome --package",
         "lint": "eslint src/**/*.js",
         "lint:fix": "eslint src/**/*.js --fix",
-        "test": "echo \"No tests yet\" && exit 0",
-        "eco:sync": "node scripts/sync-eco.js"
+        "test": "echo \"No tests yet\" && exit 0"
     },
     "devDependencies": {
         "archiver": "^6.0.1",
