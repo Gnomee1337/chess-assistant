@@ -1,0 +1,53 @@
+/**
+ * Application-wide constants
+ */
+
+export const APP_NAME = 'Chess Assistant';
+export const APP_VERSION = '1.0.0';
+
+export const DEFAULT_SETTINGS = {
+    depth: 15,
+    enabled: true,
+    autoAnalyze: true
+};
+
+export const ANALYSIS_DEPTH = {
+    MIN: 5,
+    MAX: 25,
+    DEFAULT: 15,
+    FAST_MAX: 10,
+    BALANCED_MAX: 18
+};
+
+export const PIECE_CHARS = {
+    WHITE: { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' },
+    BLACK: { p: 'p', n: 'n', b: 'b', r: 'r', q: 'q', k: 'k' }
+};
+
+export const FILES = { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5, g: 6, h: 7 };
+
+export const COLORS = {
+    HIGHLIGHT: 'rgb(155, 199, 0)',
+    ARROW: 'rgb(155, 199, 0)',
+    ERROR: '#ff6b6b'
+};
+
+export const SELECTORS = {
+    BOARD: 'wc-chess-board, chess-board, .board',
+    MOVE_LIST: '.move-list, wc-simple-move-list',
+    PIECES: '[class*="piece"]',
+    ARROWS_SVG: 'svg.arrows'
+};
+
+export const MESSAGE_TYPES = {
+    ANALYZE: 'analyze',
+    STOCKFISH_MESSAGE: 'stockfish-message',
+    STOCKFISH_ERROR: 'stockfish-error',
+    RESET_ENGINE: 'reset-engine'
+};
+
+export const STORAGE_KEYS = {
+    DEPTH: 'depth',
+    ENABLED: 'enabled',
+    AUTO_ANALYZE: 'autoAnalyze'
+};
