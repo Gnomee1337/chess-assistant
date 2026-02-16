@@ -32,7 +32,8 @@
   ],
   "web_accessible_resources": [
     "stockfish.js",
-    "stockfish.wasm"
+    "stockfish.wasm",
+    "eco.json"
   ],
   "browser_action": {
     "default_popup": "popup.html",

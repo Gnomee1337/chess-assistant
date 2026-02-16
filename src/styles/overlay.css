@@ -19,7 +19,8 @@
   display: none;
 }
 
-#chess-assistant-overlay.collapsed .moves-container {
+#chess-assistant-overlay.collapsed .moves-container,
+#chess-assistant-overlay.collapsed .opening-container {
   display: none;
 }
 
@@ -231,4 +232,106 @@
 
 .auto-btn:hover {
   transform: scale(1.05);
+}
+
+
+.opening-container {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 12px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.opening-title {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 4px;
+}
+
+.opening-name {
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.opening-lines,
+.repertoire-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.opening-lines li,
+.repertoire-list li {
+  margin-bottom: 4px;
+}
+
+.save-line-btn {
+  width: 100%;
+  margin-top: 8px;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  background: #4ade80;
+  color: #064e3b;
+}
+
+.save-line-btn:hover {
+  opacity: 0.95;
+}
+
+.repertoire-block {
+  margin-top: 10px;
+}
+
+.repertoire-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.repertoire-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.repertoire-list li.repertoire-empty {
+  display: block;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.repertoire-remove {
+  border: none;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+
+.opening-played {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  margin-bottom: 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(255, 255, 255, 0.82);
+  word-break: break-word;
 }

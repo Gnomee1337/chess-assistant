@@ -2,7 +2,7 @@
  * Chrome storage abstraction layer
  */
 
-import { STORAGE_KEYS, DEFAULT_SETTINGS } from './constants.js';
+import { DEFAULT_SETTINGS } from './constants.js';
 import { Logger } from './logger.js';
 
 const logger = new Logger('Storage');
