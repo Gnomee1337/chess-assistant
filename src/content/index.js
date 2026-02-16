@@ -51,6 +51,7 @@ class ChessAssistant {
         this.analysisService.setDepth(settings.depth);
         this.overlay.isEnabled = settings.enabled;
         this.overlay.autoAnalyze = settings.autoAnalyze;
+        this.overlay.refreshControls();
     }
 
     /**
@@ -176,9 +177,11 @@ class ChessAssistant {
             }
             if (changes.enabled !== undefined) {
                 this.overlay.isEnabled = changes.enabled.newValue;
+                this.overlay.updateEnabledButton();
             }
             if (changes.autoAnalyze !== undefined) {
                 this.overlay.autoAnalyze = changes.autoAnalyze.newValue;
+                this.overlay.updateAutoButton();
             }
         });
     }
