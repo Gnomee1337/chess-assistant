@@ -83,17 +83,29 @@ function importStockfishFactory(paths) {
 
     for (const path of paths) {
         const url = chrome.runtime.getURL(path);
+        const candidates = [path, `./${path}`, url];
+        let imported = false;
 
-        try {
-            importScriptsFn(url);
-            if (typeof globalThis.STOCKFISH === 'function') {
-                return { path, url };
+        for (const candidate of candidates) {
+            try {
+                importScriptsFn(candidate);
+                imported = true;
+                break;
+            } catch (error) {
+                // Try next candidate form.
             }
-
-            importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
-        } catch (error) {
-            importErrors.push(`${path}: ${error?.message || error}`);
         }
+
+        if (!imported) {
+            importErrors.push(`${path}: failed to load using ${candidates.join(', ')}`);
+            continue;
+        }
+
+        if (typeof globalThis.STOCKFISH === 'function') {
+            return { path, url };
+        }
+
+        importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
     }
 
     throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
