@@ -119,6 +119,11 @@ export class AnalysisService {
                         this.useLocalEngine = false;
                     }
 
+                    if (fallbackMessage.includes('Cannot call unknown function init') || fallbackMessage.includes('Cannot call unknown function uci_command')) {
+                        this.localEngineUnavailableReason = 'Bundled Stockfish JS/WASM files are incompatible (missing init/uci_command exports).';
+                        this.useLocalEngine = false;
+                    }
+
                     logger.error('Local fallback initialization failed:', fallbackError);
                 });
         }
@@ -188,9 +193,14 @@ export class AnalysisService {
                 if (index >= workerPaths.length) {
                     const startupSummary = startupErrors.join(' | ');
                     const accessBlocked = startupErrors.length > 0 && startupErrors.every((entry) => entry.includes('cannot be accessed from origin'));
+                    const wasmApiMismatch = startupErrors.some((entry) => entry.includes('Cannot call unknown function init') || entry.includes('Cannot call unknown function uci_command'));
 
                     if (accessBlocked) {
                         this.localEngineUnavailableReason = 'Local Stockfish fallback is blocked by page origin/CSP restrictions.';
+                    }
+
+                    if (wasmApiMismatch) {
+                        this.localEngineUnavailableReason = 'Bundled Stockfish JS/WASM files are incompatible (missing init/uci_command exports).';
                     }
 
                     reject(new Error(`Local Stockfish worker startup failed. Tried: ${startupSummary}`));

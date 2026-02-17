@@ -416,12 +416,12 @@ chrome.runtime.onConnect.addListener(function (port) {
 
                         const isAssetError =
                             typeof errorMessage === 'string' &&
-                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script') || errorMessage.includes('Failed to create Stockfish worker') || errorMessage.includes('Failed to initialize STOCKFISH factory'));
+                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script') || errorMessage.includes('Failed to create Stockfish worker') || errorMessage.includes('Failed to initialize STOCKFISH factory') || errorMessage.includes('Cannot call unknown function init') || errorMessage.includes('Cannot call unknown function uci_command'));
 
                         safePostToPort(currentAnalysisPort, {
                             type: 'stockfish-error',
                             error: isAssetError
-                                ? 'Stockfish files could not be loaded by the extension. Rebuild and load the dist folder in chrome://extensions.'
+                                ? 'Stockfish files are missing or incompatible. Rebuild and load dist/, and ensure stockfish.js + stockfish.wasm are a matching pair.'
                                 : 'Stockfish engine is restarting. Please try again in a few seconds.'
                         });
                     });
