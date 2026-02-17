@@ -23,6 +23,7 @@ export class AnalysisService {
         this.lastFen = null;
         this.onMoveCallback = null;
         this.onErrorCallback = null;
+        this.analysisTimeoutId = null;
     }
 
     /**
@@ -45,8 +46,13 @@ export class AnalysisService {
 
             this.port.onDisconnect.addListener(() => {
                 this.port = null;
+                this.clearAnalysisTimeout();
                 this.isAnalyzing = false;
                 logger.warn('Disconnected from background');
+
+                if (!this.useLocalEngine) {
+                    this.handleError('Background disconnected while analyzing. Switching to local fallback.');
+                }
             });
 
             logger.log('Connected to background script');
@@ -65,6 +71,10 @@ export class AnalysisService {
         }
 
         if (msg.type === MESSAGE_TYPES.STOCKFISH_MESSAGE) {
+            if (typeof msg.data === 'string' && msg.data.includes('bestmove')) {
+                this.clearAnalysisTimeout();
+                this.isAnalyzing = false;
+            }
             this.handleStockfishMessage(msg.data);
         } else if (msg.type === MESSAGE_TYPES.STOCKFISH_ERROR) {
             this.handleError(msg.error);
@@ -87,6 +97,7 @@ export class AnalysisService {
      * @param {string} error - Error message
      */
     handleError(error) {
+        this.clearAnalysisTimeout();
         this.isAnalyzing = false;
 
         if (this.shouldUseLocalEngineFallback(error) && !this.useLocalEngine) {
@@ -117,7 +128,9 @@ export class AnalysisService {
             text.includes('Failed to import Stockfish script') ||
             text.includes('Worker constructor is unavailable') ||
             text.includes('Stockfish files could not be loaded') ||
-            text.includes('engine is restarting')
+            text.includes('engine is restarting') ||
+            text.includes('Background disconnected while analyzing') ||
+            text.includes('Background analysis timed out')
         );
     }
 
@@ -185,6 +198,7 @@ export class AnalysisService {
                     if (worker === this.localEngine) {
                         this.handleStockfishMessage(message);
                         if (typeof message === 'string' && message.includes('bestmove')) {
+                            this.clearAnalysisTimeout();
                             this.isAnalyzing = false;
                         }
                     }
@@ -243,6 +257,26 @@ export class AnalysisService {
         });
 
         return this.localEngineInitPromise;
+    }
+
+    clearAnalysisTimeout() {
+        if (this.analysisTimeoutId) {
+            clearTimeout(this.analysisTimeoutId);
+            this.analysisTimeoutId = null;
+        }
+    }
+
+    startAnalysisTimeout() {
+        this.clearAnalysisTimeout();
+
+        this.analysisTimeoutId = setTimeout(() => {
+            if (!this.isAnalyzing) {
+                return;
+            }
+
+            this.isAnalyzing = false;
+            this.handleError('Background analysis timed out. Switching to local fallback.');
+        }, 12000);
     }
 
     sendAnalyzeCommand(fen, depth) {
@@ -313,6 +347,9 @@ export class AnalysisService {
             }
 
             this.sendAnalyzeCommand(fen, this.normalizeDepth(this.depth));
+            if (!this.useLocalEngine) {
+                this.startAnalysisTimeout();
+            }
         } catch (error) {
             this.handleError('Failed to start analysis. Reload extension and page.');
             logger.error('Failed to send analyze message:', error);
