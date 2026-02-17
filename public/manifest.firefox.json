@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Chess Assistant for Chess.com",
+  "name": "Chess Assistant",
   "version": "1.0.0",
-  "description": "Free chess analysis assistant using Stockfish for chess.com",
+  "description": "Free chess analysis assistant using Stockfish for chess.com/lichess.org",
   "applications": {
     "gecko": {
       "id": "chess-assistant@example.com",

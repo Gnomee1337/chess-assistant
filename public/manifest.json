@@ -1,21 +1,21 @@
 {
-  "manifest_version": 2,
-  "name": "Chess Assistant for Chess.com",
+  "manifest_version": 3,
+  "name": "Chess Assistant",
   "version": "1.0.0",
-  "description": "Free chess analysis assistant using Stockfish for chess.com",
+  "description": "Free chess analysis assistant using Stockfish for chess.com/lichess.org",
   "permissions": [
-    "storage",
+    "storage"
+  ],
+  "host_permissions": [
     "https://www.chess.com/*",
     "https://lichess.org/*",
     "https://cdn.jsdelivr.net/*"
   ],
-  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; object-src 'self'",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
-    "scripts": [
-      "browser-polyfill.js",
-      "background.js"
-    ],
-    "persistent": false
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
@@ -34,15 +34,23 @@
     }
   ],
   "web_accessible_resources": [
-    "stockfish.js",
-    "stockfish.wasm",
-    "ecoA.json",
-    "ecoB.json",
-    "ecoC.json",
-    "ecoD.json",
-    "ecoE.json"
+    {
+      "resources": [
+        "stockfish.js",
+        "stockfish.wasm",
+        "ecoA.json",
+        "ecoB.json",
+        "ecoC.json",
+        "ecoD.json",
+        "ecoE.json"
+      ],
+      "matches": [
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
+      ]
+    }
   ],
-  "browser_action": {
+  "action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icon.png",

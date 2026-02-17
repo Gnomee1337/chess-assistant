@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Chess Assistant [DEBUG]",
   "version": "1.0.0",
-  "description": "Free chess analysis assistant using Stockfish for chess.com - DEBUG BUILD",
+  "description": "Free chess analysis assistant using Stockfish - DEBUG BUILD",
   "permissions": [
     "storage",
     "https://www.chess.com/*",

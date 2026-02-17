@@ -1,7 +1,7 @@
 {
     "name": "chess-assistant",
     "version": "1.0.0",
-    "description": "Free chess analysis assistant for Chess.com using Stockfish",
+    "description": "Free chess analysis assistant using Stockfish for chess.com/lichess.org",
     "scripts": {
         "build": "node scripts/build.js",
         "build:prod": "NODE_ENV=production node scripts/build.js --prod",
@@ -39,10 +39,10 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/yourusername/chess-assistant"
+        "url": "https://github.com/Gnomee1337/chess-assistant"
     },
     "bugs": {
-        "url": "https://github.com/yourusername/chess-assistant/issues"
+        "url": "https://github.com/Gnomee1337/chess-assistant/issues"
     },
     "dependencies": {
         "@chess-openings/eco.json": "^1.1.0"
