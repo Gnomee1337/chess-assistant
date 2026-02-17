@@ -6,6 +6,43 @@ let stockfishReady = false;
 let initAttempts = 0;
 let isAnalyzing = false;
 
+const ANALYSIS_LIMITS = {
+    MIN_DEPTH: 5,
+    MAX_DEPTH: 25,
+    MAX_FEN_LENGTH: 128
+};
+
+function safePostToPort(port, payload) {
+    if (!port) return;
+
+    try {
+        port.postMessage(payload);
+    } catch (error) {
+        console.error('Background - Failed to post message to port:', error);
+    }
+}
+
+function isTrustedPort(port) {
+    const senderUrl = port?.sender?.url;
+    return typeof senderUrl === 'string' && senderUrl.startsWith('https://www.chess.com/');
+}
+
+function normalizeDepth(depth) {
+    const parsed = Number.parseInt(depth, 10);
+    if (!Number.isFinite(parsed)) {
+        return ANALYSIS_LIMITS.MIN_DEPTH;
+    }
+
+    return Math.min(ANALYSIS_LIMITS.MAX_DEPTH, Math.max(ANALYSIS_LIMITS.MIN_DEPTH, parsed));
+}
+
+function isValidAnalyzeMessage(msg) {
+    if (!msg || typeof msg !== 'object') return false;
+    if (msg.type !== 'analyze') return false;
+    if (typeof msg.fen !== 'string' || msg.fen.length > ANALYSIS_LIMITS.MAX_FEN_LENGTH) return false;
+    return true;
+}
+
 function initStockfish() {
     if (stockfish || initAttempts > 3) return;
 
@@ -77,6 +114,15 @@ function initStockfish() {
 function isValidFEN(fen) {
     if (!fen || typeof fen !== 'string') return false;
 
+    if (fen.length > ANALYSIS_LIMITS.MAX_FEN_LENGTH) {
+        return false;
+    }
+
+    // Limit characters to legal FEN alphabet and separators.
+    if (!/^[pnbrqkPNBRQK1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
+        return false;
+    }
+
     const parts = fen.split(' ');
     if (parts.length < 2) return false;
 
@@ -110,6 +156,12 @@ function isValidFEN(fen) {
 
 chrome.runtime.onConnect.addListener(function (port) {
     if (port.name === 'chess-assistant') {
+        if (!isTrustedPort(port)) {
+            console.warn('Background - Rejected untrusted connection:', port?.sender?.url);
+            port.disconnect();
+            return;
+        }
+
         currentAnalysisPort = port;
 
         if (!stockfish) {
@@ -117,13 +169,23 @@ chrome.runtime.onConnect.addListener(function (port) {
         }
 
         port.onMessage.addListener(function (msg) {
-            if (msg.type === 'analyze') {
+            if (msg && msg.type === 'analyze') {
+                if (!isValidAnalyzeMessage(msg)) {
+                    safePostToPort(currentAnalysisPort, {
+                        type: 'stockfish-error',
+                        error: 'Invalid analysis request.'
+                    });
+                    return;
+                }
+
+                const safeFen = msg.fen.trim();
+                const safeDepth = normalizeDepth(msg.depth);
                 console.log('Background - Analyze request:', msg.fen);
 
                 // Validate FEN before sending to Stockfish
-                if (!isValidFEN(msg.fen)) {
-                    console.error('Background - Invalid FEN:', msg.fen);
-                    currentAnalysisPort.postMessage({
+                if (!isValidFEN(safeFen)) {
+                    console.error('Background - Invalid FEN:', safeFen);
+                    safePostToPort(currentAnalysisPort, {
                         type: 'stockfish-error',
                         error: 'Invalid board position detected. Please try again.'
                     });
@@ -134,10 +196,13 @@ chrome.runtime.onConnect.addListener(function (port) {
                     console.log('Background - Not ready, waiting...');
                     setTimeout(() => {
                         if (stockfishReady && stockfish) {
-                            analyzePosition(msg);
+                            analyzePosition({
+                                fen: safeFen,
+                                depth: safeDepth
+                            });
                         } else {
                             console.error('Background - Timeout');
-                            currentAnalysisPort.postMessage({
+                            safePostToPort(currentAnalysisPort, {
                                 type: 'stockfish-error',
                                 error: 'Stockfish not loaded. Make sure stockfish.js is in the extension folder.'
                             });
@@ -146,8 +211,11 @@ chrome.runtime.onConnect.addListener(function (port) {
                     return;
                 }
 
-                analyzePosition(msg);
-            } else if (msg.type === 'reset-engine') {
+                analyzePosition({
+                    fen: safeFen,
+                    depth: safeDepth
+                });
+            } else if (msg && msg.type === 'reset-engine') {
                 // Allow manual engine reset
                 console.log('Background - Manual engine reset requested');
                 if (stockfish) {
@@ -198,7 +266,7 @@ function analyzePosition(msg) {
         isAnalyzing = false;
 
         if (currentAnalysisPort) {
-            currentAnalysisPort.postMessage({
+            safePostToPort(currentAnalysisPort, {
                 type: 'stockfish-error',
                 error: 'Error communicating with engine. Try reloading the page.'
             });

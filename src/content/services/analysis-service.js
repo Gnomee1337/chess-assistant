@@ -8,6 +8,8 @@ import { BoardParser } from '../chess/board-parser.js';
 import { FENValidator } from '../chess/fen-validator.js';
 
 const logger = new Logger('AnalysisService');
+const MIN_DEPTH = 5;
+const MAX_DEPTH = 25;
 
 export class AnalysisService {
     constructor() {
@@ -111,7 +113,7 @@ export class AnalysisService {
         this.port.postMessage({
             type: MESSAGE_TYPES.ANALYZE,
             fen: fen,
-            depth: this.depth
+            depth: this.normalizeDepth(this.depth)
         });
     }
 
@@ -120,7 +122,16 @@ export class AnalysisService {
      * @param {number} depth - Analysis depth (5-25)
      */
     setDepth(depth) {
-        this.depth = depth;
+        this.depth = this.normalizeDepth(depth);
+    }
+
+    normalizeDepth(depth) {
+        const parsed = Number.parseInt(depth, 10);
+        if (!Number.isFinite(parsed)) {
+            return MIN_DEPTH;
+        }
+
+        return Math.min(MAX_DEPTH, Math.max(MIN_DEPTH, parsed));
     }
 
     /**
