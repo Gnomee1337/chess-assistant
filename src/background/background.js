@@ -140,11 +140,11 @@ function isValidFEN(fen) {
     }
 
     // Limit characters to legal FEN alphabet and separators.
-    if (!/^[pnbrqkPNBRQK1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
+    if (!/^[pnbrqkPNBRQKwW1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
         return false;
     }
 
-    const parts = fen.split(' ');
+    const parts = fen.trim().split(/\s+/);
     if (parts.length < 2) return false;
 
     const position = parts[0];

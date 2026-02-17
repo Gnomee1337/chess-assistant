@@ -276,14 +276,19 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
-        const lichessTurn = this.determineTurnFromLichessClock();
-        if (lichessTurn) {
-            return lichessTurn;
+        const lichessMoveListTurn = this.determineTurnFromLichessMoveList();
+        if (lichessMoveListTurn) {
+            return lichessMoveListTurn;
         }
 
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
             return turnFromHighlights;
+        }
+
+        const lichessTurn = this.determineTurnFromLichessClock();
+        if (lichessTurn) {
+            return lichessTurn;
         }
 
         try {
@@ -300,6 +305,32 @@ export class BoardParser {
         }
 
         return 'w'; // Default to white
+    }
+
+
+    static determineTurnFromLichessMoveList() {
+        const moveList = document.querySelector('l4x');
+        if (!moveList) return null;
+
+        const moves = Array.from(moveList.querySelectorAll('kwdb'));
+        if (!moves.length) return null;
+
+        let lastMoveIndex = -1;
+        for (let idx = moves.length - 1; idx >= 0; idx--) {
+            const move = moves[idx];
+            if (move.classList.contains('a1t') ||
+                move.classList.contains('active') ||
+                move.classList.contains('current')) {
+                lastMoveIndex = idx;
+                break;
+            }
+        }
+
+        if (lastMoveIndex < 0) {
+            lastMoveIndex = moves.length - 1;
+        }
+
+        return lastMoveIndex % 2 === 0 ? 'b' : 'w';
     }
 
     static determineTurnFromLichessClock() {
@@ -346,6 +377,10 @@ export class BoardParser {
         const boardElement = document.querySelector(SELECTORS.BOARD);
         if (!boardElement) return null;
 
+        if (boardElement.tagName?.toLowerCase() === 'cg-board') {
+            return this.determineLichessTurnFromHighlights(boardElement);
+        }
+
         const highlights = boardElement.querySelectorAll('.highlight[class*="square-"]');
         if (!highlights.length) return null;
 
@@ -377,5 +412,63 @@ export class BoardParser {
         }
 
         return null;
+    }
+
+    static determineLichessTurnFromHighlights(boardElement) {
+        const highlights = boardElement.querySelectorAll(':scope > square.last-move');
+        if (!highlights.length) return null;
+
+        const highlightedSquares = Array.from(highlights)
+            .map((highlight) => this.parseLichessSquarePosition(highlight))
+            .filter(Boolean);
+
+        if (!highlightedSquares.length) return null;
+
+        const pieces = this.getPieceElements(boardElement)
+            .map((piece) => this.parsePieceElement(piece))
+            .filter(Boolean);
+
+        for (const square of highlightedSquares) {
+            const pieceOnSquare = pieces.find(piece => piece.file === square.file && piece.rank === square.rank);
+            if (!pieceOnSquare) continue;
+
+            return pieceOnSquare.char === pieceOnSquare.char.toUpperCase() ? 'b' : 'w';
+        }
+
+        return null;
+    }
+
+    static parseLichessSquarePosition(squareElement) {
+        const boardElement = squareElement.closest('cg-board');
+        if (!boardElement) return null;
+
+        const boardRect = boardElement.getBoundingClientRect();
+        if (!boardRect.width || !boardRect.height) return null;
+
+        const transform = squareElement.style.transform || '';
+        const translateMatch = transform.match(/translate\(([-\d.]+)px(?:,\s*([-\d.]+)px)?\)/);
+        if (!translateMatch) return null;
+
+        const x = parseFloat(translateMatch[1]);
+        const y = parseFloat(translateMatch[2] || '0');
+        if (Number.isNaN(x) || Number.isNaN(y)) return null;
+
+        const squareSize = boardRect.width / 8;
+        if (!squareSize) return null;
+
+        const col = Math.round(x / squareSize);
+        const row = Math.round(y / squareSize);
+        if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+
+        const wrapClassName = squareElement.closest('.cg-wrap')?.className || '';
+        const isBlackOrientation = wrapClassName.includes('orientation-black');
+
+        const file = isBlackOrientation ? 7 - col : col;
+        const boardRow = isBlackOrientation ? 7 - row : row;
+
+        return {
+            file,
+            rank: 7 - boardRow
+        };
     }
 }

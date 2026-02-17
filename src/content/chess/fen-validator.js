@@ -18,7 +18,7 @@ export class FENValidator {
             return false;
         }
 
-        const parts = fen.split(' ');
+        const parts = fen.trim().split(/\s+/);
         if (parts.length < 2) {
             logger.warn('FEN has insufficient parts:', parts.length);
             return false;
