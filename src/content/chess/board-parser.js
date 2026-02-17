@@ -194,6 +194,11 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
+        const turnFromHighlights = this.determineTurnFromHighlights();
+        if (turnFromHighlights) {
+            return turnFromHighlights;
+        }
+
         try {
             const lastMove = document.querySelector('.move-list .node.selected');
             if (lastMove) {
@@ -208,5 +213,49 @@ export class BoardParser {
         }
 
         return 'w'; // Default to white
+    }
+
+    /**
+     * Determine whose turn it is from last-move highlight squares.
+     * Chess.com marks source and destination of the previous move. The destination
+     * square still contains the moved piece, so we can infer the mover color and
+     * return the opposite side to move.
+     * @returns {string|null} 'w', 'b', or null when unavailable
+     */
+    static determineTurnFromHighlights() {
+        const boardElement = document.querySelector(SELECTORS.BOARD);
+        if (!boardElement) return null;
+
+        const highlights = boardElement.querySelectorAll('.highlight[class*="square-"]');
+        if (!highlights.length) return null;
+
+        for (const highlight of highlights) {
+            const squareMatch = highlight.className.match(/square-(\d)(\d)/);
+            if (!squareMatch) continue;
+
+            const [, file, rank] = squareMatch;
+            const occupyingPiece = boardElement.querySelector(`.piece.square-${file}${rank}`);
+            if (!occupyingPiece) continue;
+
+            if (occupyingPiece.classList.contains('wp') ||
+                occupyingPiece.classList.contains('wn') ||
+                occupyingPiece.classList.contains('wb') ||
+                occupyingPiece.classList.contains('wr') ||
+                occupyingPiece.classList.contains('wq') ||
+                occupyingPiece.classList.contains('wk')) {
+                return 'b';
+            }
+
+            if (occupyingPiece.classList.contains('bp') ||
+                occupyingPiece.classList.contains('bn') ||
+                occupyingPiece.classList.contains('bb') ||
+                occupyingPiece.classList.contains('br') ||
+                occupyingPiece.classList.contains('bq') ||
+                occupyingPiece.classList.contains('bk')) {
+                return 'w';
+            }
+        }
+
+        return null;
     }
 }

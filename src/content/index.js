@@ -196,7 +196,7 @@ class ChessAssistant {
     displayResults() {
         if (this.topMoves.length > 0) {
             const validMoves = this.topMoves.filter(m => m !== undefined);
-            validMoves.sort((a, b) => b.score - a.score);
+            validMoves.sort((a, b) => a.multipv - b.multipv);
             this.topMoves = validMoves.slice(0, 3);
             this.overlay.displayMoves(this.topMoves);
             this.updateOpeningExplorer();
