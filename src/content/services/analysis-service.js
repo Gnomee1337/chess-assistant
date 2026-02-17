@@ -90,7 +90,7 @@ export class AnalysisService {
         this.isAnalyzing = false;
 
         if (this.shouldUseLocalEngineFallback(error) && !this.useLocalEngine) {
-            this.useLocalEngine = false;
+            this.useLocalEngine = true;
             logger.warn('Switching to local content-script Stockfish fallback');
 
             this.ensureLocalEngineReady()
@@ -112,7 +112,13 @@ export class AnalysisService {
 
     shouldUseLocalEngineFallback(error) {
         const text = typeof error === 'string' ? error : '';
-        return false;
+
+        return (
+            text.includes('Failed to import Stockfish script') ||
+            text.includes('Worker constructor is unavailable') ||
+            text.includes('Stockfish files could not be loaded') ||
+            text.includes('engine is restarting')
+        );
     }
 
     async ensureLocalEngineReady() {
@@ -124,7 +130,12 @@ export class AnalysisService {
             return this.localEngineInitPromise;
         }
 
-        const workerPaths = ['stockfish.js', 'stockfish/stockfish.js'];
+        const workerPaths = [
+            ['stockfish.js', 'stockfish.wasm'],
+            ['stockfish/stockfish.js', 'stockfish/stockfish.wasm'],
+            ['stockfish/stockfish.js', 'stockfish.wasm'],
+            ['stockfish.js', 'stockfish/stockfish.wasm']
+        ];
 
         this.localEngineInitPromise = new Promise((resolve, reject) => {
             const startupErrors = [];
@@ -135,13 +146,14 @@ export class AnalysisService {
                     return;
                 }
 
-                const path = workerPaths[index];
+                const [scriptPath, wasmPath] = workerPaths[index];
                 let worker;
 
                 try {
-                    worker = new Worker(chrome.runtime.getURL(path));
+                    const workerUrl = `${chrome.runtime.getURL(scriptPath)}#${encodeURIComponent(chrome.runtime.getURL(wasmPath))}`;
+                    worker = new Worker(workerUrl);
                 } catch (error) {
-                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    startupErrors.push(`${scriptPath} + ${wasmPath}: ${error?.message || error}`);
                     tryPath(index + 1);
                     return;
                 }
@@ -165,7 +177,7 @@ export class AnalysisService {
                             cleanup();
                             this.localEngine = worker;
                             this.localEngineReady = true;
-                            console.log('AnalysisService - Local Stockfish worker ready from', path);
+                            console.log('AnalysisService - Local Stockfish worker ready from', scriptPath);
                             resolve();
                         }
                     }
@@ -188,7 +200,7 @@ export class AnalysisService {
 
                     cleanup();
                     worker.terminate();
-                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    startupErrors.push(`${scriptPath} + ${wasmPath}: ${error?.message || error}`);
                     tryPath(index + 1);
                 };
 
@@ -200,7 +212,7 @@ export class AnalysisService {
                         if (!resolved) {
                             cleanup();
                             worker.terminate();
-                            startupErrors.push(`${path}: ${error?.message || error}`);
+                            startupErrors.push(`${scriptPath} + ${wasmPath}: ${error?.message || error}`);
                             tryPath(index + 1);
                         }
                     }
@@ -210,7 +222,7 @@ export class AnalysisService {
                     if (resolved) return;
                     cleanup();
                     worker.terminate();
-                    startupErrors.push(`${path}: startup timeout`);
+                    startupErrors.push(`${scriptPath} + ${wasmPath}: startup timeout`);
                     tryPath(index + 1);
                 }, 30000);
 
@@ -220,7 +232,7 @@ export class AnalysisService {
                 } catch (error) {
                     cleanup();
                     worker.terminate();
-                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    startupErrors.push(`${scriptPath} + ${wasmPath}: ${error?.message || error}`);
                     tryPath(index + 1);
                 }
             };
