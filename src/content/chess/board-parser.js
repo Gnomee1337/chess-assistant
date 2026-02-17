@@ -1,5 +1,5 @@
 /**
- * Chess board position parser for Chess.com
+ * Chess board position parser for Chess.com and Lichess
  */
 
 import { SELECTORS } from '../../shared/constants.js';
@@ -10,7 +10,7 @@ const logger = new Logger('BoardParser');
 
 export class BoardParser {
     /**
-     * Get current FEN from chess.com board
+     * Get current FEN from supported board providers
      * @returns {string|null} FEN string or null if unavailable
      */
     static getCurrentFEN() {
@@ -83,7 +83,7 @@ export class BoardParser {
                 return null;
             }
 
-            const pieces = chessBoard.querySelectorAll(SELECTORS.PIECES);
+            const pieces = this.getPieceElements(chessBoard);
             if (pieces.length === 0) {
                 logger.warn('No pieces found');
                 return null;
@@ -110,6 +110,24 @@ export class BoardParser {
             logger.error('Error parsing board:', error);
             return null;
         }
+    }
+
+    static getPieceElements(chessBoard) {
+        const tagName = chessBoard.tagName?.toLowerCase();
+
+        if (tagName === 'cg-board') {
+            // Lichess: only board piece nodes are direct children of cg-board.
+            // Ignore helper/animation elements such as ghost pieces.
+            try {
+                return Array.from(chessBoard.querySelectorAll(':scope > piece'))
+                    .filter(piece => !piece.classList.contains('ghost'));
+            } catch (error) {
+                return Array.from(chessBoard.children)
+                    .filter(node => node.tagName?.toLowerCase() === 'piece' && !node.classList.contains('ghost'));
+            }
+        }
+
+        return Array.from(chessBoard.querySelectorAll(SELECTORS.PIECES));
     }
 
     /**
