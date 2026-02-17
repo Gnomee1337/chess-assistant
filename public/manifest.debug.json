@@ -8,9 +8,10 @@
     "https://www.chess.com/*",
     "tabs",
     "activeTab",
-    "https://lichess.org/*"
+    "https://lichess.org/*",
+    "https://cdn.jsdelivr.net/*"
   ],
-  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'self'",
+  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'self'",
   "background": {
     "scripts": [
       "background.js"
