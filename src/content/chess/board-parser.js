@@ -194,17 +194,42 @@ export class BoardParser {
      * @returns {string|null}
      */
     static getPieceChar(classes) {
-        const pieceMap = {
-            'wp': 'P', 'wn': 'N', 'wb': 'B', 'wr': 'R', 'wq': 'Q', 'wk': 'K',
-            'bp': 'p', 'bn': 'n', 'bb': 'b', 'br': 'r', 'bq': 'q', 'bk': 'k',
-            'white pawn': 'P', 'white knight': 'N', 'white bishop': 'B', 'white rook': 'R', 'white queen': 'Q', 'white king': 'K',
-            'black pawn': 'p', 'black knight': 'n', 'black bishop': 'b', 'black rook': 'r', 'black queen': 'q', 'black king': 'k'
+        const classTokens = new Set(
+            String(classes)
+                .split(/\s+/)
+                .map(token => token.trim())
+                .filter(Boolean)
+        );
+
+        // Chess.com piece classes (single-token shorthand)
+        const chessComPieceMap = {
+            wp: 'P', wn: 'N', wb: 'B', wr: 'R', wq: 'Q', wk: 'K',
+            bp: 'p', bn: 'n', bb: 'b', br: 'r', bq: 'q', bk: 'k'
         };
 
-        for (const [key, value] of Object.entries(pieceMap)) {
-            if (classes.includes(key)) {
-                return value;
+        for (const [token, char] of Object.entries(chessComPieceMap)) {
+            if (classTokens.has(token)) {
+                return char;
             }
+        }
+
+        // Lichess piece classes (two-token format: "white pawn", "black king", etc.)
+        if (classTokens.has('white')) {
+            if (classTokens.has('pawn')) return 'P';
+            if (classTokens.has('knight')) return 'N';
+            if (classTokens.has('bishop')) return 'B';
+            if (classTokens.has('rook')) return 'R';
+            if (classTokens.has('queen')) return 'Q';
+            if (classTokens.has('king')) return 'K';
+        }
+
+        if (classTokens.has('black')) {
+            if (classTokens.has('pawn')) return 'p';
+            if (classTokens.has('knight')) return 'n';
+            if (classTokens.has('bishop')) return 'b';
+            if (classTokens.has('rook')) return 'r';
+            if (classTokens.has('queen')) return 'q';
+            if (classTokens.has('king')) return 'k';
         }
 
         return null;
