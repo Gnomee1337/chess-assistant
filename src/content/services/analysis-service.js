@@ -124,68 +124,116 @@ export class AnalysisService {
             return this.localEngineInitPromise;
         }
 
-        const workerPaths = ['stockfish.js', 'stockfish/stockfish.js'];
+        const candidates = [
+            { script: 'stockfish.js', wasm: 'stockfish.wasm' },
+            { script: 'stockfish/stockfish.js', wasm: 'stockfish/stockfish.wasm' },
+            { script: 'stockfish.js', wasm: 'stockfish/stockfish.wasm' },
+            { script: 'stockfish/stockfish.js', wasm: 'stockfish.wasm' }
+        ];
 
         this.localEngineInitPromise = new Promise((resolve, reject) => {
-            let resolved = false;
-            const workers = [];
+            const startupErrors = [];
 
-            const cleanupFailedWorkers = () => {
-                for (const worker of workers) {
-                    if (worker !== this.localEngine) {
-                        worker.terminate();
-                    }
+            const tryCandidate = (index) => {
+                if (index >= candidates.length) {
+                    reject(new Error(`Local Stockfish worker startup failed. Tried: ${startupErrors.join(' | ')}`));
+                    return;
                 }
-            };
 
-            for (const path of workerPaths) {
+                const candidate = candidates[index];
+                const scriptUrl = chrome.runtime.getURL(candidate.script);
+                const wasmUrl = chrome.runtime.getURL(candidate.wasm);
+
+                const workerSource = `
+                    self.onmessage = undefined;
+                    importScripts(${JSON.stringify(scriptUrl)});
+                    if (typeof self.STOCKFISH !== 'function') {
+                        throw new Error('STOCKFISH factory missing after import');
+                    }
+                    const engine = self.STOCKFISH(${JSON.stringify(wasmUrl)});
+                    self.onmessage = (event) => engine.postMessage(event.data, true);
+                    engine.onmessage = (line) => self.postMessage(line);
+                    engine.onerror = (error) => self.postMessage('info string worker-error ' + (error && error.message ? error.message : error));
+                `;
+
+                const blob = new Blob([workerSource], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                const worker = new Worker(workerUrl);
+                URL.revokeObjectURL(workerUrl);
+
+                let ready = false;
+                let finished = false;
+
+                const cleanup = () => {
+                    if (finished) return;
+                    finished = true;
+                    clearInterval(pingTimer);
+                    clearTimeout(timeoutTimer);
+                };
+
+                worker.onmessage = (event) => {
+                    const message = event && event.data !== undefined ? event.data : event;
+
+                    if (typeof message === 'string' && (message.includes('uciok') || message.includes('readyok'))) {
+                        if (!ready) {
+                            ready = true;
+                            cleanup();
+                            this.localEngine = worker;
+                            this.localEngineReady = true;
+                            resolve();
+                        }
+                    }
+
+                    if (worker === this.localEngine) {
+                        this.handleStockfishMessage(message);
+                        if (typeof message === 'string' && message.includes('bestmove')) {
+                            this.isAnalyzing = false;
+                        }
+                    }
+                };
+
+                worker.onerror = (engineError) => {
+                    cleanup();
+                    worker.terminate();
+                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${engineError?.message || engineError}`);
+                    tryCandidate(index + 1);
+                };
+
+                const pingTimer = setInterval(() => {
+                    try {
+                        worker.postMessage('uci');
+                        worker.postMessage('isready');
+                    } catch (error) {
+                        cleanup();
+                        worker.terminate();
+                        startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${error?.message || error}`);
+                        tryCandidate(index + 1);
+                    }
+                }, 400);
+
+                const timeoutTimer = setTimeout(() => {
+                    if (ready) {
+                        return;
+                    }
+
+                    cleanup();
+                    worker.terminate();
+                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: startup timeout`);
+                    tryCandidate(index + 1);
+                }, 9000);
+
                 try {
-                    const worker = new Worker(chrome.runtime.getURL(path));
-                    workers.push(worker);
-
-                    worker.onmessage = (event) => {
-                        const message = event && event.data !== undefined ? event.data : event;
-                        if (typeof message === 'string' && (message.includes('uciok') || message.includes('readyok'))) {
-                            if (!resolved) {
-                                resolved = true;
-                                this.localEngine = worker;
-                                this.localEngineReady = true;
-                                cleanupFailedWorkers();
-                                resolve();
-                            }
-                        }
-
-                        if (worker === this.localEngine) {
-                            this.handleStockfishMessage(message);
-                            if (typeof message === 'string' && message.includes('bestmove')) {
-                                this.isAnalyzing = false;
-                            }
-                        }
-                    };
-
-                    worker.onerror = (engineError) => {
-                        if (worker === this.localEngine) {
-                            this.localEngineReady = false;
-                            this.localEngine = null;
-                        }
-
-                        if (!resolved && workers.length === workerPaths.length) {
-                            reject(engineError);
-                        }
-                    };
-
                     worker.postMessage('uci');
                     worker.postMessage('isready');
                 } catch (error) {
-                    // Try next path.
+                    cleanup();
+                    worker.terminate();
+                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${error?.message || error}`);
+                    tryCandidate(index + 1);
                 }
-            }
+            };
 
-            setTimeout(() => {
-                if (!resolved) {
-                    reject(new Error('Local Stockfish worker startup timeout'));
-                }
-            }, 10000);
+            tryCandidate(0);
         }).finally(() => {
             this.localEngineInitPromise = null;
         });
