@@ -1,65 +1,264 @@
-// Background script - Local Stockfish worker with improved error handling
+// Background service worker — Chess Assistant
+//
+// WHY OFFSCREEN DOCUMENT:
+//   Chrome MV3 service workers lack new Worker() AND forbid importScripts()
+//   inside async code. The only way to host a Web Worker is via an Offscreen
+//   Document (chrome.offscreen API), which runs in a normal browser context.
+//
+// Architecture:
+//   content script ──port──▶ service worker ──sendMessage──▶ offscreen doc
+//                  ◀─────────               ◀──────────────  (Stockfish Worker)
 
-let stockfish = null;
+'use strict';
+
 let currentAnalysisPort = null;
 let stockfishReady = false;
-let initAttempts = 0;
 let isAnalyzing = false;
-let stockfishSource = 'local';
-let stockfishInitPromise = null;
+let pendingAnalysis = null;   // queued while engine is loading
+let offscreenReady = false;
 
-const CDN_STOCKFISH_ESM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
-
-// Analysis limits to prevent abuse and ensure responsiveness
 const ANALYSIS_LIMITS = {
     MIN_DEPTH: 5,
     MAX_DEPTH: 25,
     MAX_FEN_LENGTH: 128
 };
 
-function safePostToPort(port, payload) {
-    if (!port) return;
+// ─── Offscreen document management ───────────────────────────────────────────
+
+async function ensureOffscreenDocument() {
+    try {
+        if (await chrome.offscreen.hasDocument()) {
+            offscreenReady = true;
+            return true;
+        }
+
+        await chrome.offscreen.createDocument({
+            url: chrome.runtime.getURL('offscreen.html'),
+            reasons: ['WORKERS'],
+            justification: 'Run Stockfish chess engine in a Web Worker'
+        });
+
+        offscreenReady = true;
+        console.log('Background - Offscreen document created');
+        return true;
+    } catch (e) {
+        console.error('Background - Could not create offscreen document:', e);
+        offscreenReady = false;
+        return false;
+    }
+}
+
+function sendToStockfish(command) {
+    chrome.runtime.sendMessage({ type: 'stockfish-command', command })
+        .catch(e => console.warn('Background - sendToStockfish failed:', e.message));
+}
+
+// ─── Engine init ──────────────────────────────────────────────────────────────
+
+async function initStockfish() {
+    console.log('Background - Initialising Stockfish via offscreen document...');
+
+    const ok = await ensureOffscreenDocument();
+    if (!ok) {
+        safePostToPort(currentAnalysisPort, {
+            type: 'stockfish-error',
+            error: 'Could not create offscreen document. Check that the "offscreen" permission is in manifest.json.'
+        });
+        return;
+    }
+
+    // If the SW was killed and restarted while the offscreen doc survived,
+    // the engine may already be ready — ask for its current state.
+    try {
+        const status = await chrome.runtime.sendMessage({ type: 'stockfish-status-request' });
+        if (status && status.ready) {
+            console.log('Background - Offscreen engine already ready (SW restart recovery)');
+            stockfishReady = true;
+
+            if (pendingAnalysis) {
+                const queued = pendingAnalysis;
+                pendingAnalysis = null;
+                runAnalysis(queued);
+            }
+            return;
+        }
+    } catch {
+        // Offscreen doc not yet listening — that's fine, we'll get uciok when it's ready.
+    }
+
+    // Send 'uci' to start the handshake. The offscreen doc will forward it to the
+    // Worker which will respond with 'uciok' → caught below in onMessage.
+    sendToStockfish('uci');
+}
+
+// ─── Messages FROM offscreen document ────────────────────────────────────────
+
+chrome.runtime.onMessage.addListener(function (msg, sender) {
+    // Only accept messages from our own extension pages.
+    if (sender.id !== chrome.runtime.id) return;
+    // Ignore messages from content scripts (they use the port instead).
+    if (sender.tab) return;
+
+    if (msg.type === 'offscreen-output') {
+        const message = msg.data;
+        console.log('Stockfish:', message);
+
+        if (typeof message === 'string' && message.includes('uciok')) {
+            stockfishReady = true;
+            console.log('Background - ✅ Stockfish READY');
+
+            // Drain any request queued while the WASM was loading.
+            if (pendingAnalysis) {
+                const queued = pendingAnalysis;
+                pendingAnalysis = null;
+                console.log('Background - Running queued analysis');
+                runAnalysis(queued);
+            }
+        }
+
+        if (typeof message === 'string' && message.includes('bestmove')) {
+            isAnalyzing = false;
+        }
+
+        safePostToPort(currentAnalysisPort, { type: 'stockfish-message', data: message });
+
+    } else if (msg.type === 'offscreen-error') {
+        console.error('Background - Offscreen Stockfish error:', msg.error);
+        stockfishReady = false;
+        isAnalyzing = false;
+
+        safePostToPort(currentAnalysisPort, {
+            type: 'stockfish-error',
+            error: msg.error
+        });
+    }
+});
+
+// ─── Port connection from content script ─────────────────────────────────────
+
+chrome.runtime.onConnect.addListener(function (port) {
+    if (port.name !== 'chess-assistant') return;
+
+    if (!isTrustedPort(port)) {
+        console.warn('Background - Rejected untrusted connection:', port?.sender?.url);
+        port.disconnect();
+        return;
+    }
+
+    currentAnalysisPort = port;
+
+    // (Re-)init whenever a content script connects so a restarted SW recovers cleanly.
+    initStockfish();
+
+    port.onMessage.addListener(function (msg) {
+        if (msg && msg.type === 'analyze') {
+            handleAnalyzeRequest(msg);
+        } else if (msg && msg.type === 'reset-engine') {
+            handleReset();
+        }
+    });
+
+    port.onDisconnect.addListener(function () {
+        currentAnalysisPort = null;
+    });
+});
+
+// ─── Analysis request handling ────────────────────────────────────────────────
+
+function handleAnalyzeRequest(msg) {
+    if (!isValidAnalyzeMessage(msg)) {
+        safePostToPort(currentAnalysisPort, { type: 'stockfish-error', error: 'Invalid analysis request.' });
+        return;
+    }
+
+    const safeFen = msg.fen.trim();
+    const safeDepth = normalizeDepth(msg.depth);
+
+    if (!isValidFEN(safeFen)) {
+        safePostToPort(currentAnalysisPort, { type: 'stockfish-error', error: 'Invalid board position.' });
+        return;
+    }
+
+    if (!stockfishReady) {
+        // Engine still loading (large WASM) — queue and notify UI.
+        console.log('Background - Engine loading, queuing analysis...');
+        pendingAnalysis = { fen: safeFen, depth: safeDepth };
+        safePostToPort(currentAnalysisPort, {
+            type: 'stockfish-message',
+            data: 'info string Engine loading, please wait...'
+        });
+        return;
+    }
+
+    runAnalysis({ fen: safeFen, depth: safeDepth });
+}
+
+function handleReset() {
+    console.log('Background - Manual engine reset');
+    stockfishReady = false;
+    isAnalyzing = false;
+    offscreenReady = false;
+    pendingAnalysis = null;
+
+    // Destroy the offscreen document so a fresh one is created on next init.
+    chrome.offscreen.closeDocument().catch(() => { });
+
+    setTimeout(() => initStockfish(), 300);
+}
+
+function runAnalysis(msg) {
+    if (!stockfishReady) {
+        console.error('Background - Cannot analyze: engine not ready');
+        return;
+    }
+
+    if (isAnalyzing) sendToStockfish('stop');
 
     try {
-        port.postMessage(payload);
-    } catch (error) {
-        console.error('Background - Failed to post message to port:', error);
+        isAnalyzing = true;
+        sendToStockfish('stop');
+
+        setTimeout(() => {
+            sendToStockfish('ucinewgame');
+            sendToStockfish('position fen ' + msg.fen);
+            sendToStockfish('setoption name MultiPV value 3');
+            sendToStockfish('go depth ' + msg.depth);
+            console.log('Background - ✅ Analysis commands sent');
+        }, 50);
+
+    } catch (e) {
+        console.error('Background - Error sending analysis commands:', e);
+        isAnalyzing = false;
+        safePostToPort(currentAnalysisPort, {
+            type: 'stockfish-error',
+            error: 'Error communicating with engine. Try reloading the page.'
+        });
     }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function safePostToPort(port, payload) {
+    if (!port) return;
+    try { port.postMessage(payload); }
+    catch (e) { console.error('Background - port.postMessage failed:', e); }
 }
 
 function isTrustedPort(port) {
     const senderUrl = port?.sender?.url;
-    if (typeof senderUrl !== 'string') {
-        return false;
-    }
-
+    if (typeof senderUrl !== 'string') return false;
     try {
         const url = new URL(senderUrl);
-        if (url.protocol !== 'https:') {
-            return false;
-        }
-
-        const trustedHosts = new Set([
-            'www.chess.com',
-            'chess.com',
-            'lichess.org',
-            'www.lichess.org'
-        ]);
-
-        return trustedHosts.has(url.hostname);
-    } catch (error) {
-        console.warn('Background - Could not parse sender URL:', senderUrl, error);
-        return false;
-    }
+        if (url.protocol !== 'https:') return false;
+        return new Set(['www.chess.com', 'chess.com', 'lichess.org', 'www.lichess.org'])
+            .has(url.hostname);
+    } catch { return false; }
 }
 
 function normalizeDepth(depth) {
-    const parsed = Number.parseInt(depth, 10);
-    if (!Number.isFinite(parsed)) {
-        return ANALYSIS_LIMITS.MIN_DEPTH;
-    }
-
-    return Math.min(ANALYSIS_LIMITS.MAX_DEPTH, Math.max(ANALYSIS_LIMITS.MIN_DEPTH, parsed));
+    const n = Number.parseInt(depth, 10);
+    if (!Number.isFinite(n)) return ANALYSIS_LIMITS.MIN_DEPTH;
+    return Math.min(ANALYSIS_LIMITS.MAX_DEPTH, Math.max(ANALYSIS_LIMITS.MIN_DEPTH, n));
 }
 
 function isValidAnalyzeMessage(msg) {
@@ -69,302 +268,29 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function createLocalStockfishEngine() {
-    const stockfishScriptUrl = chrome.runtime.getURL('stockfish.js');
-    const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
-
-    const importScriptsFn =
-        typeof globalThis.importScripts === 'function'
-            ? globalThis.importScripts.bind(globalThis)
-            : null;
-
-    if (!importScriptsFn) {
-        throw new Error('importScripts is unavailable in this service worker context');
-    }
-
-    if (typeof globalThis.STOCKFISH !== 'function') {
-        importScriptsFn(stockfishScriptUrl);
-    }
-
-    if (typeof globalThis.STOCKFISH !== 'function') {
-        throw new Error('STOCKFISH factory unavailable after importScripts');
-    }
-
-    return globalThis.STOCKFISH(wasmUrl);
-}
-
-async function createCdnStockfishEngine() {
-    const stockfishModule = await import(CDN_STOCKFISH_ESM_URL);
-    const stockfishFactory = stockfishModule?.default;
-
-    if (typeof stockfishFactory !== 'function') {
-        throw new Error('CDN Stockfish module did not expose a default factory function');
-    }
-
-    return stockfishFactory();
-}
-
-function initStockfish(preferredSource = stockfishSource) {
-    if (stockfish || stockfishInitPromise || initAttempts > 3) return;
-
-    stockfishInitPromise = (async () => {
-        initAttempts++;
-        console.log('Background - Init attempt:', initAttempts);
-
-        try {
-            if (preferredSource === 'cdn') {
-                console.log('Background - Loading Stockfish from CDN fallback');
-                stockfish = await createCdnStockfishEngine();
-                stockfishSource = 'cdn';
-            } else {
-                console.log('Background - Loading local Stockfish bundle');
-                stockfish = createLocalStockfishEngine();
-                stockfishSource = 'local';
-            }
-
-            stockfish.onmessage = function (event) {
-                const message = event && event.data !== undefined ? event.data : event;
-                console.log('Stockfish:', message);
-
-                if (typeof message === 'string' && message.includes('uciok')) {
-                    stockfishReady = true;
-                    console.log('Background - ✅ READY!');
-                }
-
-                if (typeof message === 'string' && message.includes('bestmove')) {
-                    isAnalyzing = false;
-                }
-
-                if (currentAnalysisPort) {
-                    currentAnalysisPort.postMessage({
-                        type: 'stockfish-message',
-                        data: message
-                    });
-                }
-            };
-
-            if ('onerror' in stockfish) {
-                stockfish.onerror = function (error) {
-                    console.error('Background - Stockfish Error:', error);
-
-                    const shouldTryCdnFallback = stockfishSource === 'local';
-
-                    if (currentAnalysisPort) {
-                        currentAnalysisPort.postMessage({
-                            type: 'stockfish-error',
-                            error: 'Stockfish engine crashed. Restarting...'
-                        });
-                    }
-
-                    stockfish = null;
-                    stockfishReady = false;
-                    isAnalyzing = false;
-                    stockfishInitPromise = null;
-
-                    if (shouldTryCdnFallback) {
-                        console.warn('Background - Local Stockfish failed. Falling back to CDN.');
-                        stockfishSource = 'cdn';
-                        initAttempts = 0;
-                    }
-
-                    setTimeout(() => {
-                        if (initAttempts < 3) {
-                            console.log('Background - Attempting to restart Stockfish...');
-                            initStockfish(stockfishSource);
-                        }
-                    }, 1000);
-                };
-            }
-
-            stockfish.postMessage('uci');
-
-        } catch (error) {
-            console.error('Background - Init failed:', error);
-            stockfish = null;
-            stockfishReady = false;
-
-            initAttempts = 0;
-
-            if (preferredSource === 'local') {
-                console.warn('Background - Local Stockfish missing/unavailable. Trying CDN fallback.');
-                stockfishSource = 'cdn';
-                stockfishInitPromise = null;
-                initStockfish('cdn');
-                return;
-            }
-
-            stockfishInitPromise = null;
-        } finally {
-            if (stockfish) {
-                stockfishInitPromise = null;
-            }
-        }
-    })();
-}
-
-// Validate FEN string format
 function isValidFEN(fen) {
     if (!fen || typeof fen !== 'string') return false;
-
-    if (fen.length > ANALYSIS_LIMITS.MAX_FEN_LENGTH) {
-        return false;
-    }
-
-    // Limit characters to legal FEN alphabet and separators.
-    if (!/^[pnbrqkPNBRQKwW1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
-        return false;
-    }
+    if (fen.length > ANALYSIS_LIMITS.MAX_FEN_LENGTH) return false;
+    if (!/^[pnbrqkPNBRQKwW1-8/\s\-a-hA-H0-9]+$/.test(fen)) return false;
 
     const parts = fen.trim().split(/\s+/);
     if (parts.length < 2) return false;
+    if (parts[1] !== 'w' && parts[1] !== 'b') return false;
 
-    const position = parts[0];
-    const ranks = position.split('/');
-
-    // Should have 8 ranks
+    const ranks = parts[0].split('/');
     if (ranks.length !== 8) return false;
 
-    // Check each rank
-    for (let rank of ranks) {
+    for (const rank of ranks) {
         let squares = 0;
-        for (let char of rank) {
-            if ('12345678'.includes(char)) {
-                squares += parseInt(char);
-            } else if ('pnbrqkPNBRQK'.includes(char)) {
-                squares += 1;
-            } else {
-                return false;
-            }
+        for (const char of rank) {
+            if ('12345678'.includes(char)) squares += parseInt(char);
+            else if ('pnbrqkPNBRQK'.includes(char)) squares += 1;
+            else return false;
         }
-        // Each rank should have exactly 8 squares
         if (squares !== 8) return false;
     }
 
-    // Turn should be 'w' or 'b'
-    if (parts[1] !== 'w' && parts[1] !== 'b') return false;
-
     return true;
-}
-
-chrome.runtime.onConnect.addListener(function (port) {
-    if (port.name === 'chess-assistant') {
-        if (!isTrustedPort(port)) {
-            console.warn('Background - Rejected untrusted connection:', port?.sender?.url);
-            port.disconnect();
-            return;
-        }
-
-        currentAnalysisPort = port;
-
-        if (!stockfish) {
-            initStockfish();
-        }
-
-        port.onMessage.addListener(function (msg) {
-            if (msg && msg.type === 'analyze') {
-                if (!isValidAnalyzeMessage(msg)) {
-                    safePostToPort(currentAnalysisPort, {
-                        type: 'stockfish-error',
-                        error: 'Invalid analysis request.'
-                    });
-                    return;
-                }
-
-                const safeFen = msg.fen.trim();
-                const safeDepth = normalizeDepth(msg.depth);
-                console.log('Background - Analyze request:', msg.fen);
-
-                // Validate FEN before sending to Stockfish
-                if (!isValidFEN(safeFen)) {
-                    console.error('Background - Invalid FEN:', safeFen);
-                    safePostToPort(currentAnalysisPort, {
-                        type: 'stockfish-error',
-                        error: 'Invalid board position detected. Please try again.'
-                    });
-                    return;
-                }
-
-                if (!stockfishReady) {
-                    console.log('Background - Not ready, waiting...');
-                    setTimeout(() => {
-                        if (stockfishReady && stockfish) {
-                            analyzePosition({
-                                fen: safeFen,
-                                depth: safeDepth
-                            });
-                        } else {
-                            console.error('Background - Timeout');
-                            safePostToPort(currentAnalysisPort, {
-                                type: 'stockfish-error',
-                                error: 'Stockfish not loaded (local + CDN fallback failed). Ensure local engine files exist or allow access to cdn.jsdelivr.net.'
-                            });
-                        }
-                    }, 2000);
-                    return;
-                }
-
-                analyzePosition({
-                    fen: safeFen,
-                    depth: safeDepth
-                });
-            } else if (msg && msg.type === 'reset-engine') {
-                // Allow manual engine reset
-                console.log('Background - Manual engine reset requested');
-                if (stockfish && typeof stockfish.terminate === 'function') {
-                    stockfish.terminate();
-                }
-                stockfish = null;
-                stockfishReady = false;
-                isAnalyzing = false;
-                initAttempts = 0;
-                stockfishInitPromise = null;
-                initStockfish();
-            }
-        });
-
-        port.onDisconnect.addListener(function () {
-            currentAnalysisPort = null;
-        });
-    }
-});
-
-function analyzePosition(msg) {
-    if (!stockfish || !stockfishReady) {
-        console.error('Background - Cannot analyze: engine not ready');
-        return;
-    }
-
-    if (isAnalyzing) {
-        console.log('Background - Already analyzing, stopping previous analysis');
-        stockfish.postMessage('stop');
-    }
-
-    console.log('Background - Sending commands...');
-
-    try {
-        isAnalyzing = true;
-        stockfish.postMessage('stop');
-
-        // Small delay between commands
-        setTimeout(() => {
-            stockfish.postMessage('ucinewgame');
-            stockfish.postMessage('position fen ' + msg.fen);
-            stockfish.postMessage('setoption name MultiPV value 3');
-            stockfish.postMessage('go depth ' + msg.depth);
-            console.log('Background - ✅ Commands sent');
-        }, 50);
-
-    } catch (error) {
-        console.error('Background - Error sending commands:', error);
-        isAnalyzing = false;
-
-        if (currentAnalysisPort) {
-            safePostToPort(currentAnalysisPort, {
-                type: 'stockfish-error',
-                error: 'Error communicating with engine. Try reloading the page.'
-            });
-        }
-    }
 }
 
 console.log('Background - Loaded');

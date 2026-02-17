@@ -21,56 +21,31 @@ const flags = {
     watch: args.includes('--watch')
 };
 
-// Determine build type
 const buildType = flags.debug ? 'debug' : (flags.prod ? 'production' : 'development');
 const browserType = flags.firefox ? 'firefox' : 'chrome';
 
-// Paths
 const ROOT_DIR = path.join(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const SRC_DIR = path.join(ROOT_DIR, 'src');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 
-// Colors for console output
 const colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[36m',
-    red: '\x1b[31m'
+    reset: '\x1b[0m', bright: '\x1b[1m',
+    green: '\x1b[32m', yellow: '\x1b[33m', blue: '\x1b[36m', red: '\x1b[31m'
 };
+const log = (m, c = colors.reset) => console.log(`${c}${m}${colors.reset}`);
+const logStep = m => log(`\n${colors.bright}${colors.blue}▶ ${m}${colors.reset}`);
+const logSuccess = m => log(`${colors.green}✓ ${m}${colors.reset}`);
+const logWarning = m => log(`${colors.yellow}⚠ ${m}${colors.reset}`);
+const logError = m => log(`${colors.red}✗ ${m}${colors.reset}`);
 
-function log(message, color = colors.reset) {
-    console.log(`${color}${message}${colors.reset}`);
-}
+// ─── Content script bundler ───────────────────────────────────────────────────
 
-function logStep(message) {
-    log(`\n${colors.bright}${colors.blue}▶ ${message}${colors.reset}`);
-}
-
-function logSuccess(message) {
-    log(`${colors.green}✓ ${message}${colors.reset}`);
-}
-
-function logWarning(message) {
-    log(`${colors.yellow}⚠ ${message}${colors.reset}`);
-}
-
-function logError(message) {
-    log(`${colors.red}✗ ${message}${colors.reset}`);
-}
-
-/**
- * Build a browser-ready content script bundle from refactored ES modules
- */
 async function buildContentScriptBundle() {
     const entryFile = path.join(SRC_DIR, 'content', 'index.js');
     const outputFile = path.join(DIST_DIR, 'content.js');
 
-    if (!(await fs.pathExists(entryFile))) {
-        return false;
-    }
+    if (!(await fs.pathExists(entryFile))) return false;
 
     const orderedFiles = [];
     const visited = new Set();
@@ -83,275 +58,154 @@ async function buildContentScriptBundle() {
     const collect = async (filePath) => {
         if (visited.has(filePath)) return;
         visited.add(filePath);
-
         const source = await fs.readFile(filePath, 'utf8');
         const importRegex = /^import\s+\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"];?\s*$/gm;
         let match;
-
         while ((match = importRegex.exec(source)) !== null) {
-            const importPath = match[2];
-            if (importPath.startsWith('.')) {
-                const importedFile = resolveImportPath(filePath, importPath);
-                await collect(importedFile);
+            if (match[2].startsWith('.')) {
+                await collect(resolveImportPath(filePath, match[2]));
             }
         }
-
         orderedFiles.push(filePath);
     };
 
     const compileModule = (source) => {
         const importRegex = /^import\s+\{\s*([^}]+)\s*\}\s+from\s+['"]([^'"]+)['"];?\s*$/gm;
         const importLines = [];
-
-        let transformed = source.replace(importRegex, (_, importedNames) => {
-            const names = importedNames
-                .split(',')
-                .map(n => n.trim())
-                .filter(Boolean)
-                .join(', ');
-
-            importLines.push(`const { ${names} } = globalThis.__chessAssistantModules;`);
+        let transformed = source.replace(importRegex, (_, names) => {
+            importLines.push(`const { ${names.split(',').map(n => n.trim()).filter(Boolean).join(', ')} } = globalThis.__chessAssistantModules;`);
             return '';
         });
-
         const exportedNames = [];
-        transformed = transformed.replace(/^export\s+class\s+(\w+)/gm, (_, name) => {
-            exportedNames.push(name);
-            return `class ${name}`;
-        });
-        transformed = transformed.replace(/^export\s+const\s+(\w+)/gm, (_, name) => {
-            exportedNames.push(name);
-            return `const ${name}`;
-        });
-        transformed = transformed.replace(/^export\s+function\s+(\w+)/gm, (_, name) => {
-            exportedNames.push(name);
-            return `function ${name}`;
-        });
-
-        if (importLines.length > 0) {
-            transformed = `${importLines.join('\n')}\n\n${transformed}`;
-        }
-
-        if (exportedNames.length > 0) {
-            transformed += `\n\nObject.assign(globalThis.__chessAssistantModules, { ${[...new Set(exportedNames)].join(', ')} });\n`;
-        }
-
+        transformed = transformed.replace(/^export\s+class\s+(\w+)/gm, (_, n) => { exportedNames.push(n); return `class ${n}`; });
+        transformed = transformed.replace(/^export\s+const\s+(\w+)/gm, (_, n) => { exportedNames.push(n); return `const ${n}`; });
+        transformed = transformed.replace(/^export\s+function\s+(\w+)/gm, (_, n) => { exportedNames.push(n); return `function ${n}`; });
+        if (importLines.length) transformed = `${importLines.join('\n')}\n\n${transformed}`;
+        if (exportedNames.length) transformed += `\n\nObject.assign(globalThis.__chessAssistantModules, { ${[...new Set(exportedNames)].join(', ')} });\n`;
         return `(() => {\n${transformed}\n})();\n`;
     };
 
     await collect(entryFile);
 
     const chunks = [
-        '// Auto-generated by scripts/build.js from src/content/index.js and dependencies',
+        '// Auto-generated by scripts/build.js',
         'globalThis.__chessAssistantModules = globalThis.__chessAssistantModules || {};',
         ''
     ];
-
     for (const filePath of orderedFiles) {
         const source = await fs.readFile(filePath, 'utf8');
         const relativePath = path.relative(ROOT_DIR, filePath).replace(/\\/g, '/');
         chunks.push(`// Module: ${relativePath}`);
         chunks.push(compileModule(source));
     }
-
     await fs.writeFile(outputFile, chunks.join('\n'), 'utf8');
     return true;
 }
 
-/**
- * Clean dist directory
- */
+// ─── Build steps ──────────────────────────────────────────────────────────────
+
 async function clean() {
-    logStep('Cleaning dist directory...');
+    logStep('Cleaning dist...');
     await fs.remove(DIST_DIR);
     await fs.ensureDir(DIST_DIR);
-    logSuccess('Dist directory cleaned');
+    logSuccess('Dist cleaned');
 }
 
-/**
- * Copy public files (HTML, CSS, icons, etc.)
- */
 async function copyPublicFiles() {
     logStep('Copying public files...');
-
-    const filesToCopy = [
-        'browser-polyfill.js',
-        'ecoA.json',
-        'ecoB.json',
-        'ecoC.json',
-        'ecoD.json',
-        'ecoE.json'
-    ];
-
-    for (const file of filesToCopy) {
+    const files = ['browser-polyfill.js', 'ecoA.json', 'ecoB.json', 'ecoC.json', 'ecoD.json', 'ecoE.json'];
+    for (const file of files) {
         const src = path.join(PUBLIC_DIR, file);
-        const dest = path.join(DIST_DIR, file);
-
-        if (await fs.pathExists(src)) {
-            await fs.copy(src, dest);
-            logSuccess(`Copied ${file}`);
-        } else {
-            logWarning(`${file} not found, skipping`);
-        }
+        if (await fs.pathExists(src)) { await fs.copy(src, path.join(DIST_DIR, file)); logSuccess(`Copied ${file}`); }
+        else logWarning(`${file} not found, skipping`);
     }
-
-    // Copy CSS
-    const cssFiles = ['overlay.css'];
-    for (const file of cssFiles) {
-        const srcPath = path.join(SRC_DIR, 'styles', file);
-        if (await fs.pathExists(srcPath)) {
-            await fs.copy(srcPath, path.join(DIST_DIR, file));
-            logSuccess(`Copied ${file}`);
-        }
-    }
+    const cssFile = path.join(SRC_DIR, 'styles', 'overlay.css');
+    if (await fs.pathExists(cssFile)) { await fs.copy(cssFile, path.join(DIST_DIR, 'overlay.css')); logSuccess('Copied overlay.css'); }
 }
 
-/**
- * Copy or generate icon
- */
 async function copyIcon() {
     logStep('Handling icon...');
-
-    // Check for PNG icon first
     const pngIcon = path.join(PUBLIC_DIR, 'icons', 'icon.png');
     const svgIcon = path.join(PUBLIC_DIR, 'icons', 'icon.svg');
-
-
-    if (await fs.pathExists(pngIcon)) {
-        await fs.copy(pngIcon, path.join(DIST_DIR, 'icon.png'));
-        logSuccess('Copied icon.png');
-    } else if (await fs.pathExists(svgIcon)) {
-        // SVG exists but no PNG
-        logWarning('icon.svg found but icon.png missing. Please convert SVG to PNG.');
-        logWarning('You can use: convert icon.svg -resize 128x128 icon.png');
-        // Copy SVG anyway for reference
-        await fs.copy(svgIcon, path.join(DIST_DIR, 'icon.svg'));
-    } else {
-        logWarning('No icon found! Extension will not have an icon.');
-    }
+    if (await fs.pathExists(pngIcon)) { await fs.copy(pngIcon, path.join(DIST_DIR, 'icon.png')); logSuccess('Copied icon.png'); }
+    else if (await fs.pathExists(svgIcon)) { logWarning('icon.png missing — convert icon.svg first'); await fs.copy(svgIcon, path.join(DIST_DIR, 'icon.svg')); }
+    else logWarning('No icon found');
 }
 
-/**
- * Copy Stockfish files
- */
 async function copyStockfishFiles() {
     logStep('Copying Stockfish files...');
-
-    const stockfishFiles = ['stockfish.js', 'stockfish.wasm'];
     let copiedCount = 0;
-
-    for (const file of stockfishFiles) {
-        const rootPath = path.join(PUBLIC_DIR, file);
-        const nestedPath = path.join(PUBLIC_DIR, 'stockfish', file);
-        const src = (await fs.pathExists(rootPath)) ? rootPath : nestedPath;
-        const dest = path.join(DIST_DIR, file);
-
-
-        if (await fs.pathExists(src)) {
-            await fs.copy(src, dest);
-            logSuccess(`Copied ${file}`);
+    for (const file of ['stockfish.js', 'stockfish.wasm']) {
+        const candidates = [path.join(PUBLIC_DIR, file), path.join(PUBLIC_DIR, 'stockfish', file)];
+        let src = null;
+        for (const c of candidates) { if (await fs.pathExists(c)) { src = c; break; } }
+        if (src) {
+            await fs.copy(src, path.join(DIST_DIR, file));
+            logSuccess(`Copied ${file}  (from ${path.relative(ROOT_DIR, src)})`);
             copiedCount++;
         } else {
-            logWarning(`${file} not found! See public/STOCKFISH_SETUP.md for instructions.`);
+            logWarning(`${file} not found in public/ or public/stockfish/`);
         }
     }
-
-    if (copiedCount === 0) {
-        logWarning('No Stockfish files found. Extension will try to load from CDN.');
-    }
+    if (copiedCount === 0) logError('No Stockfish files found! Place stockfish.js + stockfish.wasm in public/stockfish/');
 }
 
-/**
- * Select and copy appropriate manifest
- */
 async function copyManifest() {
     logStep(`Copying manifest for ${browserType} (${buildType})...`);
-
-    let manifestFile;
-
-    if (flags.debug) {
-        manifestFile = 'manifest.debug.json';
-    } else if (browserType === 'firefox') {
-        manifestFile = 'manifest.firefox.json';
-    } else {
-        manifestFile = 'manifest.json';
-    }
-
+    const manifestFile = flags.debug ? 'manifest.debug.json' : browserType === 'firefox' ? 'manifest.firefox.json' : 'manifest.json';
     const src = path.join(PUBLIC_DIR, manifestFile);
-    const dest = path.join(DIST_DIR, 'manifest.json');
-
-    if (await fs.pathExists(src)) {
-        await fs.copy(src, dest);
-        logSuccess(`Using ${manifestFile}`);
-    } else {
-        logError(`Manifest ${manifestFile} not found!`);
-        throw new Error(`Missing manifest: ${manifestFile}`);
-    }
+    if (await fs.pathExists(src)) { await fs.copy(src, path.join(DIST_DIR, 'manifest.json')); logSuccess(`Using ${manifestFile}`); }
+    else { logError(`Manifest ${manifestFile} not found!`); throw new Error(`Missing manifest: ${manifestFile}`); }
 }
 
-/**
- * Bundle source files (simple copy for now)
- */
 async function bundleSource() {
     logStep('Bundling source files...');
 
-    // Copy background script
+    // Background service worker
     const backgroundSrc = path.join(SRC_DIR, 'background', 'background.js');
-    if (await fs.pathExists(backgroundSrc)) {
-        await fs.copy(backgroundSrc, path.join(DIST_DIR, 'background.js'));
-        logSuccess('Copied background.js');
+    if (await fs.pathExists(backgroundSrc)) { await fs.copy(backgroundSrc, path.join(DIST_DIR, 'background.js')); logSuccess('Copied background.js'); }
+
+    // Offscreen document JS (Chrome MV3 — hosts the Stockfish Worker)
+    const offscreenJS = path.join(SRC_DIR, 'background', 'offscreen.js');
+    if (await fs.pathExists(offscreenJS)) {
+        await fs.copy(offscreenJS, path.join(DIST_DIR, 'offscreen.js'));
+        logSuccess('Copied offscreen.js');
+    } else {
+        logWarning('offscreen.js not found in src/background/ — Chrome analysis will not work');
     }
 
-    // Build content script from refactored modules
-    const builtRefactoredContent = await buildContentScriptBundle();
-    if (!builtRefactoredContent) {
-        logError('Missing src/content/index.js');
-        throw new Error('Cannot build content script from refactored source');
+    // Offscreen HTML (Chrome MV3)
+    const offscreenHTML = path.join(PUBLIC_DIR, 'offscreen.html');
+    if (await fs.pathExists(offscreenHTML)) {
+        await fs.copy(offscreenHTML, path.join(DIST_DIR, 'offscreen.html'));
+        logSuccess('Copied offscreen.html');
+    } else {
+        logWarning('offscreen.html not found in public/ — Chrome analysis will not work');
     }
 
-    logSuccess('Built content.js from src/content modules');
+    // Content script bundle
+    const built = await buildContentScriptBundle();
+    if (!built) { logError('Missing src/content/index.js'); throw new Error('Cannot build content script'); }
+    logSuccess('Built content.js');
 
-    // Copy popup files
-    const popupJS = path.join(SRC_DIR, 'popup', 'popup.js');
-    const popupHTML = path.join(SRC_DIR, 'popup', 'popup.html');
-    const popupCSS = path.join(SRC_DIR, 'popup', 'popup.css');
-
-    if (await fs.pathExists(popupJS)) {
-        await fs.copy(popupJS, path.join(DIST_DIR, 'popup.js'));
-        logSuccess('Copied popup.js');
-    }
-
-    if (await fs.pathExists(popupHTML)) {
-        await fs.copy(popupHTML, path.join(DIST_DIR, 'popup.html'));
-        logSuccess('Copied popup.html');
-    }
-
-    if (await fs.pathExists(popupCSS)) {
-        await fs.copy(popupCSS, path.join(DIST_DIR, 'popup.css'));
-        logSuccess('Copied popup.css');
+    // Popup
+    for (const [src, dest] of [
+        [path.join(SRC_DIR, 'popup', 'popup.js'), 'popup.js'],
+        [path.join(SRC_DIR, 'popup', 'popup.html'), 'popup.html'],
+        [path.join(SRC_DIR, 'popup', 'popup.css'), 'popup.css'],
+    ]) {
+        if (await fs.pathExists(src)) { await fs.copy(src, path.join(DIST_DIR, dest)); logSuccess(`Copied ${dest}`); }
     }
 }
 
-/**
- * Create package (ZIP or XPI)
- */
 async function createPackage() {
     logStep('Creating package...');
-
-    const extension = browserType === 'firefox' ? 'xpi' : 'zip';
-    const filename = `chess-assistant-${browserType}-${buildType}.${extension}`;
-    const outputPath = path.join(ROOT_DIR, filename);
-
-    const output = fs.createWriteStream(outputPath);
+    const ext = browserType === 'firefox' ? 'xpi' : 'zip';
+    const filename = `chess-assistant-${browserType}-${buildType}.${ext}`;
+    const output = fs.createWriteStream(path.join(ROOT_DIR, filename));
     const archive = archiver('zip', { zlib: { level: 9 } });
-
     return new Promise((resolve, reject) => {
-        output.on('close', () => {
-            const sizeMB = (archive.pointer() / 1024 / 1024).toFixed(2);
-            logSuccess(`Package created: ${filename} (${sizeMB} MB)`);
-            resolve();
-        });
-
+        output.on('close', () => { logSuccess(`Package: ${filename} (${(archive.pointer() / 1024 / 1024).toFixed(2)} MB)`); resolve(); });
         archive.on('error', reject);
         archive.pipe(output);
         archive.directory(DIST_DIR, false);
@@ -359,29 +213,18 @@ async function createPackage() {
     });
 }
 
-/**
- * Display build summary
- */
 function displaySummary() {
     log('\n' + '='.repeat(50));
     log(`${colors.bright}Build Summary${colors.reset}`);
     log('='.repeat(50));
-    log(`Browser: ${colors.blue}${browserType}${colors.reset}`);
-    log(`Build Type: ${colors.blue}${buildType}${colors.reset}`);
-    log(`Output: ${colors.blue}${DIST_DIR}${colors.reset}`);
-
-    if (flags.package) {
-        const extension = browserType === 'firefox' ? 'xpi' : 'zip';
-        const filename = `chess-assistant-${browserType}-${buildType}.${extension}`;
-        log(`Package: ${colors.blue}${filename}${colors.reset}`);
-    }
-
+    log(`Browser:    ${colors.blue}${browserType}${colors.reset}`);
+    log(`Build type: ${colors.blue}${buildType}${colors.reset}`);
+    log(`Output:     ${colors.blue}${DIST_DIR}${colors.reset}`);
     log('='.repeat(50) + '\n');
 }
 
-/**
- * Main build function
- */
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
 async function build() {
     try {
         log('\n' + colors.bright + colors.blue + '╔════════════════════════════════════════╗');
@@ -394,80 +237,42 @@ async function build() {
         await copyStockfishFiles();
         await copyManifest();
         await bundleSource();
-
-        if (flags.package) {
-            await createPackage();
-        }
+        if (flags.package) await createPackage();
 
         displaySummary();
-
         logSuccess('Build completed successfully!');
 
         if (!flags.watch) {
             log('\nNext steps:');
-            log(`  1. Load extension from ${colors.blue}dist/${colors.reset}`);
+            log(`  1. Load from ${colors.blue}dist/${colors.reset}`);
             if (browserType === 'firefox') {
-                log('  2. Open about:debugging#/runtime/this-firefox');
-                log('  3. Click "Load Temporary Add-on"');
-                log('  4. Select dist/manifest.json');
+                log('  2. Open about:debugging#/runtime/this-firefox → Load Temporary Add-on → dist/manifest.json');
             } else {
-                log('  2. Open chrome://extensions/');
-                log('  3. Enable Developer mode');
-                log('  4. Click "Load unpacked"');
-                log('  5. Select the dist folder');
+                log('  2. Open chrome://extensions/ → Enable Developer mode → Load unpacked → select dist/');
             }
         }
-
     } catch (error) {
         logError('Build failed: ' + error.message);
-        console.error(error);
         process.exit(1);
     }
 }
 
-/**
- * Watch mode
- */
 async function watch() {
     logStep('Starting watch mode...');
-
     const chokidar = require('chokidar');
-
     await build();
-
-    const watcher = chokidar.watch([SRC_DIR, PUBLIC_DIR], {
-        ignored: /(^|[\/\\])\../,
-        persistent: true,
-        ignoreInitial: true
-    });
-
     let buildTimeout;
-
-    watcher.on('all', (event, filePath) => {
-        log(`\n${colors.yellow}File ${event}: ${path.relative(ROOT_DIR, filePath)}${colors.reset}`);
-
-        // Debounce builds
-        clearTimeout(buildTimeout);
-        buildTimeout = setTimeout(() => {
-            build();
-        }, 1000);
-    });
-
+    chokidar.watch([SRC_DIR, PUBLIC_DIR], { ignored: /(^|[\/\\])\../, persistent: true, ignoreInitial: true })
+        .on('all', (event, filePath) => {
+            log(`\n${colors.yellow}File ${event}: ${path.relative(ROOT_DIR, filePath)}${colors.reset}`);
+            clearTimeout(buildTimeout);
+            buildTimeout = setTimeout(() => build(), 1000);
+        });
     log(`${colors.green}Watching for changes...${colors.reset}\n`);
 }
 
-/**
- * Entry point
- */
 (async () => {
-    if (flags.clean && !flags.watch && !flags.package) {
-        await clean();
-        return;
-    }
-
-    if (flags.watch) {
-        await watch();
-    } else {
-        await build();
-    }
+    if (flags.clean && !flags.watch && !flags.package) { await clean(); return; }
+    if (flags.watch) await watch();
+    else await build();
 })();

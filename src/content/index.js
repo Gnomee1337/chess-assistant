@@ -26,15 +26,12 @@ class ChessAssistant {
         this.arrowColor = null;
     }
 
-    /**
-     * Initialize the assistant
-     */
     async initialize() {
         logger.log('Initializing Chess Assistant...');
 
         await this.loadSettings();
         await this.openingExplorer.initialize();
-        await this.delay(2000); // Wait for page to load
+        await this.delay(2000);
 
         this.analysisService.connect();
         this.overlay.create();
@@ -47,9 +44,6 @@ class ChessAssistant {
         logger.log('Chess Assistant ready!');
     }
 
-    /**
-     * Load settings from storage
-     */
     async loadSettings() {
         const settings = await StorageService.getMultiple([
             STORAGE_KEYS.DEPTH,
@@ -99,7 +93,9 @@ class ChessAssistant {
             savedAt: Date.now()
         };
 
-        const duplicate = this.repertoireLines.some(item => item.fen === entry.fen && item.line === entry.line);
+        const duplicate = this.repertoireLines.some(
+            item => item.fen === entry.fen && item.line === entry.line
+        );
         if (duplicate) {
             this.overlay.updateMessage('This line is already saved in repertoire');
             return;
@@ -111,29 +107,18 @@ class ChessAssistant {
                 this.overlay.setRepertoireLines(this.repertoireLines);
                 this.overlay.updateMessage('Saved line to repertoire');
             })
-            .catch(() => {
-                this.overlay.showError('Could not save repertoire line');
-            });
+            .catch(() => this.overlay.showError('Could not save repertoire line'));
     }
 
     removeRepertoireLine(index) {
-        if (index < 0 || index >= this.repertoireLines.length) {
-            return;
-        }
+        if (index < 0 || index >= this.repertoireLines.length) return;
 
         this.repertoireLines.splice(index, 1);
         StorageService.set(STORAGE_KEYS.REPERTOIRE_LINES, this.repertoireLines)
-            .then(() => {
-                this.overlay.setRepertoireLines(this.repertoireLines);
-            })
-            .catch(() => {
-                this.overlay.showError('Could not update repertoire');
-            });
+            .then(() => this.overlay.setRepertoireLines(this.repertoireLines))
+            .catch(() => this.overlay.showError('Could not update repertoire'));
     }
 
-    /**
-     * Setup analysis service callbacks
-     */
     setupAnalysisCallbacks() {
         this.analysisService.onMove((message) => {
             this.handleStockfishMessage(message);
@@ -142,12 +127,13 @@ class ChessAssistant {
         this.analysisService.onError((error) => {
             this.overlay.showError(error);
         });
+
+        // Show a friendly status while the WASM engine is still loading.
+        this.analysisService.onLoading((status) => {
+            this.overlay.updateMessage('⏳ ' + status);
+        });
     }
 
-    /**
-     * Handle Stockfish messages
-     * @param {string} message - Stockfish output
-     */
     handleStockfishMessage(message) {
         if (message.includes('info depth') && message.includes('multipv')) {
             this.parseMultiPVInfo(message);
@@ -156,10 +142,6 @@ class ChessAssistant {
         }
     }
 
-    /**
-     * Parse MultiPV info from Stockfish
-     * @param {string} message - Stockfish info line
-     */
     parseMultiPVInfo(message) {
         const depthMatch = message.match(/depth (\d+)/);
         const multipvMatch = message.match(/multipv (\d+)/);
@@ -174,8 +156,7 @@ class ChessAssistant {
         const move = moveMatch[1];
 
         if (depth === this.analysisService.depth) {
-            let score;
-            let mateIn;
+            let score, mateIn;
 
             if (mateMatch) {
                 mateIn = parseInt(mateMatch[1], 10);
@@ -190,9 +171,6 @@ class ChessAssistant {
         }
     }
 
-    /**
-     * Display analysis results
-     */
     displayResults() {
         if (this.topMoves.length > 0) {
             const validMoves = this.topMoves.filter(m => m !== undefined);
@@ -208,18 +186,14 @@ class ChessAssistant {
     }
 
     getPlayedMoves() {
-        const nodes = document.querySelectorAll('.move-list .node, wc-simple-move-list .node, rm6 l4x kwdb');
+        const nodes = document.querySelectorAll(
+            '.move-list .node, wc-simple-move-list .node, rm6 l4x kwdb'
+        );
         const moves = [];
 
         nodes.forEach((node) => {
-            const text = (node.textContent || '')
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            if (!text || /^\d+\.?$/.test(text) || text === '...') {
-                return;
-            }
-
+            const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!text || /^\d+\.?$/.test(text) || text === '...') return;
             moves.push(text);
         });
 
@@ -244,9 +218,6 @@ class ChessAssistant {
         });
     }
 
-    /**
-     * Setup move observer for auto-analysis
-     */
     setupMoveObserver() {
         const moveList = document.querySelector(SELECTORS.MOVE_LIST);
         if (!moveList) {
@@ -261,7 +232,6 @@ class ChessAssistant {
             if (!this.overlay.autoAnalyze || !this.overlay.isEnabled) return;
 
             const currentMoveCount = this.getMoveCount();
-
             if (currentMoveCount > this.lastMoveCount) {
                 this.lastMoveCount = currentMoveCount;
                 logger.log('New move detected, auto-analyzing...');
@@ -274,26 +244,16 @@ class ChessAssistant {
             }
         });
 
-        this.moveObserver.observe(moveList, {
-            childList: true,
-            subtree: true
-        });
-
+        this.moveObserver.observe(moveList, { childList: true, subtree: true });
         this.lastMoveCount = this.getMoveCount();
     }
 
     getMoveCount() {
         const chessComMoves = document.querySelectorAll('.move-list .node').length;
-        if (chessComMoves > 0) {
-            return chessComMoves;
-        }
-
+        if (chessComMoves > 0) return chessComMoves;
         return document.querySelectorAll('rm6 l4x kwdb').length;
     }
 
-    /**
-     * Setup storage change listener
-     */
     setupStorageListener() {
         StorageService.onChange((changes) => {
             if (changes.depth) {
@@ -312,8 +272,10 @@ class ChessAssistant {
                 this.overlay.setRepertoireLines(this.repertoireLines);
             }
             if (changes.highlightColor !== undefined || changes.arrowColor !== undefined) {
-                this.highlightColor = changes.highlightColor ? changes.highlightColor.newValue : this.highlightColor;
-                this.arrowColor = changes.arrowColor ? changes.arrowColor.newValue : this.arrowColor;
+                this.highlightColor = changes.highlightColor
+                    ? changes.highlightColor.newValue : this.highlightColor;
+                this.arrowColor = changes.arrowColor
+                    ? changes.arrowColor.newValue : this.arrowColor;
                 MoveHighlighter.setColors({
                     highlightColor: this.highlightColor,
                     arrowColor: this.arrowColor
@@ -322,17 +284,11 @@ class ChessAssistant {
         });
     }
 
-    /**
-     * Delay helper
-     * @param {number} ms - Milliseconds
-     * @returns {Promise}
-     */
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
-// Initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         const assistant = new ChessAssistant();
