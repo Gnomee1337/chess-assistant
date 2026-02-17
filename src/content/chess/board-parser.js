@@ -276,6 +276,11 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
+        const lichessMoveListTurn = this.determineTurnFromLichessMoveList();
+        if (lichessMoveListTurn) {
+            return lichessMoveListTurn;
+        }
+
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
             return turnFromHighlights;
@@ -300,6 +305,32 @@ export class BoardParser {
         }
 
         return 'w'; // Default to white
+    }
+
+
+    static determineTurnFromLichessMoveList() {
+        const moveList = document.querySelector('l4x');
+        if (!moveList) return null;
+
+        const moves = Array.from(moveList.querySelectorAll('kwdb'));
+        if (!moves.length) return null;
+
+        let lastMoveIndex = -1;
+        for (let idx = moves.length - 1; idx >= 0; idx--) {
+            const move = moves[idx];
+            if (move.classList.contains('a1t') ||
+                move.classList.contains('active') ||
+                move.classList.contains('current')) {
+                lastMoveIndex = idx;
+                break;
+            }
+        }
+
+        if (lastMoveIndex < 0) {
+            lastMoveIndex = moves.length - 1;
+        }
+
+        return lastMoveIndex % 2 === 0 ? 'b' : 'w';
     }
 
     static determineTurnFromLichessClock() {
