@@ -69,37 +69,67 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function createWorkerStockfishEngine(paths) {
-    const workerErrors = [];
+function importStockfishFactory(paths) {
+    const importScriptsFn =
+        typeof globalThis.importScripts === 'function'
+            ? globalThis.importScripts.bind(globalThis)
+            : null;
 
-    if (typeof Worker !== 'function') {
-        throw new Error('Worker API is unavailable in this service worker context');
+    if (!importScriptsFn) {
+        throw new Error('importScripts is unavailable in this service worker context');
     }
+
+    const importErrors = [];
 
     for (const path of paths) {
         const url = chrome.runtime.getURL(path);
 
         try {
-            const worker = new Worker(url);
-            return { worker, path, url };
+            importScriptsFn(url);
+            if (typeof globalThis.STOCKFISH === 'function') {
+                return { path, url };
+            }
+
+            importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
         } catch (error) {
-            workerErrors.push(`${path}: ${error?.message || error}`);
+            importErrors.push(`${path}: ${error?.message || error}`);
         }
     }
 
-    throw new Error(`Failed to create Stockfish worker. Tried: ${workerErrors.join(' | ')}`);
+    throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
 }
 
-async function createLocalStockfishEngine() {
-    const stockfishScriptPaths = [
+function createLocalStockfishEngine() {
+    const stockfishScript = importStockfishFactory([
         'stockfish.js',
         'stockfish/stockfish.js',
         'public/stockfish/stockfish.js'
+    ]);
+
+    const scriptDir = stockfishScript.path.includes('/')
+        ? stockfishScript.path.split('/').slice(0, -1).join('/')
+        : '';
+
+    const wasmCandidates = [
+        scriptDir ? `${scriptDir}/stockfish.wasm` : 'stockfish.wasm',
+        'stockfish.wasm',
+        'stockfish/stockfish.wasm',
+        'public/stockfish/stockfish.wasm'
     ];
 
-    const workerEngine = createWorkerStockfishEngine(stockfishScriptPaths);
-    console.log('Background - Using Stockfish worker script:', workerEngine.path);
-    return workerEngine.worker;
+    let lastFactoryError = null;
+    for (const wasmPath of wasmCandidates) {
+        try {
+            const wasmUrl = chrome.runtime.getURL(wasmPath);
+            const engine = globalThis.STOCKFISH(wasmUrl);
+            console.log('Background - Using Stockfish assets:', stockfishScript.path, wasmPath);
+            return engine;
+        } catch (error) {
+            lastFactoryError = error;
+        }
+    }
+
+    throw new Error(`Failed to initialize STOCKFISH factory with wasm candidates: ${wasmCandidates.join(', ')}. Last error: ${lastFactoryError?.message || lastFactoryError}`);
 }
 
 function clearReadinessPingTimer() {
@@ -141,7 +171,7 @@ function initStockfish() {
 
         try {
             console.log('Background - Loading local Stockfish bundle');
-            stockfish = await createLocalStockfishEngine();
+            stockfish = createLocalStockfishEngine();
 
             stockfish.onmessage = function (event) {
                 const message = event && event.data !== undefined ? event.data : event;
@@ -354,7 +384,7 @@ chrome.runtime.onConnect.addListener(function (port) {
 
                         const isAssetError =
                             typeof errorMessage === 'string' &&
-                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script') || errorMessage.includes('Failed to create Stockfish worker'));
+                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script') || errorMessage.includes('Failed to create Stockfish worker') || errorMessage.includes('Failed to initialize STOCKFISH factory'));
 
                         safePostToPort(currentAnalysisPort, {
                             type: 'stockfish-error',
