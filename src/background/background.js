@@ -140,7 +140,7 @@ function isValidFEN(fen) {
     }
 
     // Limit characters to legal FEN alphabet and separators.
-    if (!/^[pnbrqkPNBRQK1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
+    if (!/^[pnbrqkPNBRQKwW1-8/\s\-a-hA-H0-9]+$/.test(fen)) {
         return false;
     }
 
