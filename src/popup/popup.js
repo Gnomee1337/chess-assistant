@@ -3,8 +3,6 @@
 document.addEventListener('DOMContentLoaded', function () {
     const depthSlider = document.getElementById('depth');
     const depthValue = document.getElementById('depthValue');
-    const highlightColorInput = document.getElementById('highlightColor');
-    const arrowColorInput = document.getElementById('arrowColor');
     const saveBtn = document.getElementById('saveBtn');
     const status = document.getElementById('status');
     const tabButtons = document.querySelectorAll('.tab-btn');
@@ -187,13 +185,6 @@ document.addEventListener('DOMContentLoaded', function () {
         setPickerColor('highlight', normalizeHex(result.highlightColor, defaultHighlight));
         setPickerColor('arrow', normalizeHex(result.arrowColor, defaultArrow));
     });
-
-    tabButtons.forEach((button) => {
-        button.addEventListener('click', () => activateTab(button.dataset.tab));
-    });
-
-    highlightColorInput.addEventListener('input', updatePreview);
-    arrowColorInput.addEventListener('input', updatePreview);
 
     // Save settings
     saveBtn.addEventListener('click', function () {
