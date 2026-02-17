@@ -85,8 +85,38 @@ async function resolveFirstAvailableAsset(paths) {
     throw new Error(`Asset not found in extension package. Tried: ${paths.join(', ')}`);
 }
 
+function importStockfishFactory(paths) {
+    const importScriptsFn =
+        typeof globalThis.importScripts === 'function'
+            ? globalThis.importScripts.bind(globalThis)
+            : null;
+
+    if (!importScriptsFn) {
+        throw new Error('importScripts is unavailable in this service worker context');
+    }
+
+    const importErrors = [];
+
+    for (const path of paths) {
+        const url = chrome.runtime.getURL(path);
+
+        try {
+            importScriptsFn(url);
+            if (typeof globalThis.STOCKFISH === 'function') {
+                return { path, url };
+            }
+
+            importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
+        } catch (error) {
+            importErrors.push(`${path}: ${error?.message || error}`);
+        }
+    }
+
+    throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
+}
+
 async function createLocalStockfishEngine() {
-    const stockfishScript = await resolveFirstAvailableAsset([
+    const stockfishScript = importStockfishFactory([
         'stockfish.js',
         'stockfish/stockfish.js',
         'public/stockfish/stockfish.js'
@@ -99,23 +129,6 @@ async function createLocalStockfishEngine() {
     ]);
 
     console.log('Background - Using Stockfish assets:', stockfishScript.path, wasmAsset.path);
-
-    const importScriptsFn =
-        typeof globalThis.importScripts === 'function'
-            ? globalThis.importScripts.bind(globalThis)
-            : null;
-
-    if (!importScriptsFn) {
-        throw new Error('importScripts is unavailable in this service worker context');
-    }
-
-    if (typeof globalThis.STOCKFISH !== 'function') {
-        try {
-            importScriptsFn(stockfishScript.url);
-        } catch (error) {
-            throw new Error(`Failed to import Stockfish script (${stockfishScript.path}): ${error?.message || error}`);
-        }
-    }
 
     if (typeof globalThis.STOCKFISH !== 'function') {
         throw new Error('STOCKFISH factory unavailable after importScripts');
