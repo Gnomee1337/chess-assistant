@@ -38,6 +38,8 @@
       "resources": [
         "stockfish.js",
         "stockfish.wasm",
+        "stockfish/stockfish.wasm",
+        "stockfish/stockfish.js",
         "ecoA.json",
         "ecoB.json",
         "ecoC.json",

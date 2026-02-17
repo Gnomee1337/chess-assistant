@@ -335,11 +335,19 @@ chrome.runtime.onConnect.addListener(function (port) {
                             depth: safeDepth
                         });
                     })
-                    .catch(() => {
-                        console.error('Background - Timeout waiting for Stockfish');
+                    .catch((error) => {
+                        const errorMessage = error && error.message ? error.message : String(error);
+                        console.error('Background - Failed waiting for Stockfish readiness:', errorMessage);
+
+                        const isAssetError =
+                            typeof errorMessage === 'string' &&
+                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script'));
+
                         safePostToPort(currentAnalysisPort, {
                             type: 'stockfish-error',
-                            error: 'Stockfish engine is restarting. Please try again in a few seconds.'
+                            error: isAssetError
+                                ? 'Stockfish files could not be loaded by the extension. Rebuild and load the dist folder in chrome://extensions.'
+                                : 'Stockfish engine is restarting. Please try again in a few seconds.'
                         });
                     });
             } else if (msg && msg.type === 'reset-engine') {

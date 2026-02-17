@@ -249,6 +249,8 @@ async function copyStockfishFiles() {
 
         if (await fs.pathExists(src)) {
             await fs.copy(src, dest);
+            await fs.ensureDir(path.join(DIST_DIR, 'stockfish'));
+            await fs.copy(src, path.join(DIST_DIR, 'stockfish', file));
             logSuccess(`Copied ${file}`);
             copiedCount++;
         } else {
