@@ -111,12 +111,45 @@ function importStockfishFactory(paths) {
     throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
 }
 
-function createLocalStockfishEngine() {
-    const stockfishScript = importStockfishFactory([
+function getStockfishScriptCandidates() {
+    return [
         'stockfish.js',
         'stockfish/stockfish.js',
         'public/stockfish/stockfish.js'
-    ]);
+    ];
+}
+
+function createStockfishWorker(paths) {
+    if (typeof Worker !== 'function') {
+        throw new Error('Worker constructor is unavailable in this service worker context');
+    }
+
+    const errors = [];
+
+    for (const path of paths) {
+        try {
+            const workerUrl = chrome.runtime.getURL(path);
+            const engine = new Worker(workerUrl);
+            console.log('Background - Using Stockfish worker script:', path);
+            return { engine, path };
+        } catch (error) {
+            errors.push(`${path}: ${error?.message || error}`);
+        }
+    }
+
+    throw new Error(`Failed to construct Stockfish worker. Tried: ${errors.join(' | ')}`);
+}
+
+function createLocalStockfishEngine() {
+    const scriptPaths = getStockfishScriptCandidates();
+
+    try {
+        return createStockfishWorker(scriptPaths).engine;
+    } catch (workerError) {
+        console.warn('Background - Worker Stockfish bootstrap failed, trying importScripts fallback:', workerError?.message || workerError);
+    }
+
+    const stockfishScript = importStockfishFactory(scriptPaths);
 
     const scriptDir = stockfishScript.path.includes('/')
         ? stockfishScript.path.split('/').slice(0, -1).join('/')
