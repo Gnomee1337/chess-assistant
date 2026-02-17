@@ -5,10 +5,7 @@ let currentAnalysisPort = null;
 let stockfishReady = false;
 let initAttempts = 0;
 let isAnalyzing = false;
-let stockfishSource = 'local';
 let stockfishInitPromise = null;
-
-const CDN_STOCKFISH_ESM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
 
 // Analysis limits to prevent abuse and ensure responsiveness
 const ANALYSIS_LIMITS = {
@@ -93,18 +90,7 @@ function createLocalStockfishEngine() {
     return globalThis.STOCKFISH(wasmUrl);
 }
 
-async function createCdnStockfishEngine() {
-    const stockfishModule = await import(CDN_STOCKFISH_ESM_URL);
-    const stockfishFactory = stockfishModule?.default;
-
-    if (typeof stockfishFactory !== 'function') {
-        throw new Error('CDN Stockfish module did not expose a default factory function');
-    }
-
-    return stockfishFactory();
-}
-
-function initStockfish(preferredSource = stockfishSource) {
+function initStockfish() {
     if (stockfish || stockfishInitPromise || initAttempts > 3) return;
 
     stockfishInitPromise = (async () => {
@@ -112,15 +98,8 @@ function initStockfish(preferredSource = stockfishSource) {
         console.log('Background - Init attempt:', initAttempts);
 
         try {
-            if (preferredSource === 'cdn') {
-                console.log('Background - Loading Stockfish from CDN fallback');
-                stockfish = await createCdnStockfishEngine();
-                stockfishSource = 'cdn';
-            } else {
-                console.log('Background - Loading local Stockfish bundle');
-                stockfish = createLocalStockfishEngine();
-                stockfishSource = 'local';
-            }
+            console.log('Background - Loading local Stockfish bundle');
+            stockfish = createLocalStockfishEngine();
 
             stockfish.onmessage = function (event) {
                 const message = event && event.data !== undefined ? event.data : event;
@@ -147,8 +126,6 @@ function initStockfish(preferredSource = stockfishSource) {
                 stockfish.onerror = function (error) {
                     console.error('Background - Stockfish Error:', error);
 
-                    const shouldTryCdnFallback = stockfishSource === 'local';
-
                     if (currentAnalysisPort) {
                         currentAnalysisPort.postMessage({
                             type: 'stockfish-error',
@@ -161,16 +138,10 @@ function initStockfish(preferredSource = stockfishSource) {
                     isAnalyzing = false;
                     stockfishInitPromise = null;
 
-                    if (shouldTryCdnFallback) {
-                        console.warn('Background - Local Stockfish failed. Falling back to CDN.');
-                        stockfishSource = 'cdn';
-                        initAttempts = 0;
-                    }
-
                     setTimeout(() => {
                         if (initAttempts < 3) {
                             console.log('Background - Attempting to restart Stockfish...');
-                            initStockfish(stockfishSource);
+                            initStockfish();
                         }
                     }, 1000);
                 };
@@ -182,17 +153,6 @@ function initStockfish(preferredSource = stockfishSource) {
             console.error('Background - Init failed:', error);
             stockfish = null;
             stockfishReady = false;
-
-            initAttempts = 0;
-
-            if (preferredSource === 'local') {
-                console.warn('Background - Local Stockfish missing/unavailable. Trying CDN fallback.');
-                stockfishSource = 'cdn';
-                stockfishInitPromise = null;
-                initStockfish('cdn');
-                return;
-            }
-
             stockfishInitPromise = null;
         } finally {
             if (stockfish) {
@@ -296,7 +256,7 @@ chrome.runtime.onConnect.addListener(function (port) {
                             console.error('Background - Timeout');
                             safePostToPort(currentAnalysisPort, {
                                 type: 'stockfish-error',
-                                error: 'Stockfish not loaded (local + CDN fallback failed). Ensure local engine files exist or allow access to cdn.jsdelivr.net.'
+                                error: 'Stockfish not loaded. Reload the extension to restore local engine files.'
                             });
                         }
                     }, 2000);

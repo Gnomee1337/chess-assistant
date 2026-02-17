@@ -36,6 +36,7 @@ export class AnalysisService {
 
             this.port.onDisconnect.addListener(() => {
                 this.port = null;
+                this.isAnalyzing = false;
                 logger.warn('Disconnected from background');
             });
 
@@ -95,6 +96,11 @@ export class AnalysisService {
             return;
         }
 
+        if (!this.port) {
+            this.handleError('Unable to connect to extension background process. Reload extension and page.');
+            return;
+        }
+
         const fen = BoardParser.getCurrentFEN();
         if (!fen) {
             this.handleError('Could not read board position');
@@ -110,11 +116,16 @@ export class AnalysisService {
         this.lastFen = fen;
         this.isAnalyzing = true;
 
-        this.port.postMessage({
-            type: MESSAGE_TYPES.ANALYZE,
-            fen: fen,
-            depth: this.normalizeDepth(this.depth)
-        });
+        try {
+            this.port.postMessage({
+                type: MESSAGE_TYPES.ANALYZE,
+                fen: fen,
+                depth: this.normalizeDepth(this.depth)
+            });
+        } catch (error) {
+            this.handleError('Failed to start analysis. Reload extension and page.');
+            logger.error('Failed to send analyze message:', error);
+        }
     }
 
     /**
