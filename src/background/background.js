@@ -5,6 +5,9 @@ let currentAnalysisPort = null;
 let stockfishReady = false;
 let initAttempts = 0;
 let isAnalyzing = false;
+let stockfishSource = 'local';
+
+const CDN_STOCKFISH_ESM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
 
 const ANALYSIS_LIMITS = {
     MIN_DEPTH: 5,
@@ -64,17 +67,35 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function initStockfish() {
+function createCdnStockfishWorker() {
+    const workerScript = `import Stockfish from '${CDN_STOCKFISH_ESM_URL}';\nconst engine = await Stockfish();\nself.onmessage = (event) => engine.postMessage(event.data);\nengine.onmessage = (event) => self.postMessage(event.data);`;
+    const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(workerBlob);
+
+    try {
+        return new Worker(workerUrl, { type: 'module' });
+    } finally {
+        URL.revokeObjectURL(workerUrl);
+    }
+}
+
+function initStockfish(preferredSource = stockfishSource) {
     if (stockfish || initAttempts > 3) return;
 
     initAttempts++;
     console.log('Background - Init attempt:', initAttempts);
 
     try {
-        const stockfishUrl = chrome.runtime.getURL('stockfish.js');
-        console.log('Background - Loading:', stockfishUrl);
-
-        stockfish = new Worker(stockfishUrl);
+        if (preferredSource === 'cdn') {
+            console.log('Background - Loading Stockfish from CDN fallback');
+            stockfish = createCdnStockfishWorker();
+            stockfishSource = 'cdn';
+        } else {
+            const stockfishUrl = chrome.runtime.getURL('stockfish.js');
+            console.log('Background - Loading:', stockfishUrl);
+            stockfish = new Worker(stockfishUrl);
+            stockfishSource = 'local';
+        }
 
         stockfish.onmessage = function (event) {
             const message = event.data;
@@ -100,6 +121,8 @@ function initStockfish() {
         stockfish.onerror = function (error) {
             console.error('Background - Stockfish Error:', error);
 
+            const shouldTryCdnFallback = stockfishSource === 'local';
+
             // Send error to content script
             if (currentAnalysisPort) {
                 currentAnalysisPort.postMessage({
@@ -113,11 +136,17 @@ function initStockfish() {
             stockfishReady = false;
             isAnalyzing = false;
 
+            if (shouldTryCdnFallback) {
+                console.warn('Background - Local Stockfish failed. Falling back to CDN.');
+                stockfishSource = 'cdn';
+                initAttempts = 0;
+            }
+
             // Try to reinitialize after a delay
             setTimeout(() => {
                 if (initAttempts < 3) {
                     console.log('Background - Attempting to restart Stockfish...');
-                    initStockfish();
+                    initStockfish(stockfishSource);
                 }
             }, 1000);
         };
@@ -127,6 +156,15 @@ function initStockfish() {
     } catch (error) {
         console.error('Background - Init failed:', error);
         stockfish = null;
+
+        if (preferredSource === 'local') {
+            console.warn('Background - Local Stockfish missing/unavailable. Trying CDN fallback.');
+            stockfishSource = 'cdn';
+            initAttempts = 0;
+            initStockfish('cdn');
+            return;
+        }
+
         initAttempts = 0;
     }
 }
@@ -225,7 +263,7 @@ chrome.runtime.onConnect.addListener(function (port) {
                             console.error('Background - Timeout');
                             safePostToPort(currentAnalysisPort, {
                                 type: 'stockfish-error',
-                                error: 'Stockfish not loaded. Make sure stockfish.js is in the extension folder.'
+                                error: 'Stockfish not loaded (local + CDN fallback failed). Ensure local engine files exist or allow access to cdn.jsdelivr.net.'
                             });
                         }
                     }, 2000);

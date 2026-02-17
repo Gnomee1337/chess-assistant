@@ -12,9 +12,10 @@
   "permissions": [
     "storage",
     "https://www.chess.com/*",
-    "https://lichess.org/*"
+    "https://lichess.org/*",
+    "https://cdn.jsdelivr.net/*"
   ],
-  "content_security_policy": "script-src 'self' 'wasm-eval'; object-src 'self'",
+  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net 'wasm-eval'; object-src 'self'",
   "background": {
     "scripts": [
       "browser-polyfill.js",
