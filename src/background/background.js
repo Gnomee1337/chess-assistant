@@ -8,6 +8,7 @@ let isAnalyzing = false;
 let stockfishInitPromise = null;
 let lastInitError = null;
 let nextRetryDelayMs = 1000;
+let readinessPingTimer = null;
 
 // Analysis limits to prevent abuse and ensure responsiveness
 const ANALYSIS_LIMITS = {
@@ -101,6 +102,36 @@ async function createLocalStockfishEngine() {
     return workerEngine.worker;
 }
 
+function clearReadinessPingTimer() {
+    if (readinessPingTimer) {
+        clearInterval(readinessPingTimer);
+        readinessPingTimer = null;
+    }
+}
+
+function startReadinessPing() {
+    clearReadinessPingTimer();
+
+    let uciRetries = 0;
+
+    readinessPingTimer = setInterval(() => {
+        if (!stockfish || stockfishReady) {
+            clearReadinessPingTimer();
+            return;
+        }
+
+        try {
+            stockfish.postMessage('isready');
+            if (uciRetries < 5) {
+                stockfish.postMessage('uci');
+                uciRetries += 1;
+            }
+        } catch (error) {
+            console.warn('Background - Failed readiness ping:', error);
+        }
+    }, 1000);
+}
+
 function initStockfish() {
     if (stockfish || stockfishInitPromise) return;
 
@@ -116,11 +147,12 @@ function initStockfish() {
                 const message = event && event.data !== undefined ? event.data : event;
                 console.log('Stockfish:', message);
 
-                if (typeof message === 'string' && message.includes('uciok')) {
+                if (typeof message === 'string' && (message.includes('uciok') || message.includes('readyok'))) {
                     stockfishReady = true;
                     initAttempts = 0;
                     lastInitError = null;
                     nextRetryDelayMs = 1000;
+                    clearReadinessPingTimer();
                     console.log('Background - ✅ READY!');
                 }
 
@@ -149,6 +181,7 @@ function initStockfish() {
 
                     stockfish = null;
                     stockfishReady = false;
+                    clearReadinessPingTimer();
                     isAnalyzing = false;
                     stockfishInitPromise = null;
                     lastInitError = error || new Error('stockfish-runtime-error');
@@ -164,11 +197,14 @@ function initStockfish() {
             }
 
             stockfish.postMessage('uci');
+            stockfish.postMessage('isready');
+            startReadinessPing();
 
         } catch (error) {
             console.error('Background - Init failed:', error);
             stockfish = null;
             stockfishReady = false;
+            clearReadinessPingTimer();
             stockfishInitPromise = null;
             lastInitError = error;
 
@@ -187,7 +223,7 @@ function initStockfish() {
     })();
 }
 
-function waitForStockfishReady(timeoutMs = 12000, pollIntervalMs = 100) {
+function waitForStockfishReady(timeoutMs = 45000, pollIntervalMs = 100) {
     if (stockfishReady && stockfish) {
         return Promise.resolve();
     }
@@ -339,6 +375,7 @@ chrome.runtime.onConnect.addListener(function (port) {
                 initAttempts = 0;
                 stockfishInitPromise = null;
                 lastInitError = null;
+                clearReadinessPingTimer();
                 nextRetryDelayMs = 1000;
                 initStockfish();
             }
