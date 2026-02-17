@@ -144,7 +144,7 @@ function isValidFEN(fen) {
         return false;
     }
 
-    const parts = fen.split(' ');
+    const parts = fen.trim().split(/\s+/);
     if (parts.length < 2) return false;
 
     const position = parts[0];
