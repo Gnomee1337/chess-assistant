@@ -42,13 +42,35 @@
 
     <div class="tab-panel" id="colorsTab" role="tabpanel" aria-labelledby="colorsTabBtn" hidden>
       <div class="setting-group">
-        <label for="highlightColor">Highlight Color</label>
-        <input type="color" id="highlightColor" value="#9bc700" />
+        <div class="picker-title">Highlight color</div>
+        <div class="color-picker" id="highlightPicker" data-picker="highlight">
+          <div class="picker-header">
+            <div class="color-swatch" id="highlightSwatch"></div>
+            <input class="hex-input" id="highlightHex" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="7" value="#9bc700" aria-label="Highlight hex color" />
+          </div>
+          <div class="slider-grid">
+            <label>R <input id="highlightR" type="range" min="0" max="255" value="155" /></label>
+            <label>G <input id="highlightG" type="range" min="0" max="255" value="199" /></label>
+            <label>B <input id="highlightB" type="range" min="0" max="255" value="0" /></label>
+          </div>
+          <div class="preset-row" id="highlightPresets"></div>
+        </div>
       </div>
 
       <div class="setting-group">
-        <label for="arrowColor">Arrow Color</label>
-        <input type="color" id="arrowColor" value="#9bc700" />
+        <div class="picker-title">Arrow color</div>
+        <div class="color-picker" id="arrowPicker" data-picker="arrow">
+          <div class="picker-header">
+            <div class="color-swatch" id="arrowSwatch"></div>
+            <input class="hex-input" id="arrowHex" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="7" value="#9bc700" aria-label="Arrow hex color" />
+          </div>
+          <div class="slider-grid">
+            <label>R <input id="arrowR" type="range" min="0" max="255" value="155" /></label>
+            <label>G <input id="arrowG" type="range" min="0" max="255" value="199" /></label>
+            <label>B <input id="arrowB" type="range" min="0" max="255" value="0" /></label>
+          </div>
+          <div class="preset-row" id="arrowPresets"></div>
+        </div>
       </div>
 
       <div class="setting-group examples">
@@ -65,7 +87,7 @@
             <line x1="18" y1="82" x2="82" y2="18" marker-end="url(#exampleArrowHead)" />
           </svg>
         </div>
-        <div class="preview-note">Example updates instantly while you change colors.</div>
+        <div class="preview-note">Live preview updates instantly while you tweak the sliders.</div>
       </div>
     </div>
 
