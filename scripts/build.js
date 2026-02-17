@@ -238,28 +238,34 @@ async function copyStockfishFiles() {
     logStep('Copying Stockfish files...');
 
     const stockfishFiles = ['stockfish.js', 'stockfish.wasm'];
-    let copiedCount = 0;
+    const candidateDirs = [
+        path.join(PUBLIC_DIR, 'stockfish'),
+        PUBLIC_DIR
+    ];
 
-    for (const file of stockfishFiles) {
-        const rootPath = path.join(PUBLIC_DIR, file);
-        const nestedPath = path.join(PUBLIC_DIR, 'stockfish', file);
-        const src = (await fs.pathExists(rootPath)) ? rootPath : nestedPath;
-        const dest = path.join(DIST_DIR, file);
+    let sourceDir = null;
 
-
-        if (await fs.pathExists(src)) {
-            await fs.copy(src, dest);
-            await fs.ensureDir(path.join(DIST_DIR, 'stockfish'));
-            await fs.copy(src, path.join(DIST_DIR, 'stockfish', file));
-            logSuccess(`Copied ${file}`);
-            copiedCount++;
-        } else {
-            logWarning(`${file} not found! See public/STOCKFISH_SETUP.md for instructions.`);
+    for (const dir of candidateDirs) {
+        const hasAllFiles = await Promise.all(stockfishFiles.map((file) => fs.pathExists(path.join(dir, file))));
+        if (hasAllFiles.every(Boolean)) {
+            sourceDir = dir;
+            break;
         }
     }
 
-    if (copiedCount === 0) {
-        logWarning('No Stockfish files found. Extension will try to load from CDN.');
+    if (!sourceDir) {
+        logWarning('No complete Stockfish JS/WASM pair found in public/ or public/stockfish/.');
+        logWarning('This can cause JS/WASM mismatch errors at runtime.');
+        return;
+    }
+
+    await fs.ensureDir(path.join(DIST_DIR, 'stockfish'));
+
+    for (const file of stockfishFiles) {
+        const src = path.join(sourceDir, file);
+        await fs.copy(src, path.join(DIST_DIR, file));
+        await fs.copy(src, path.join(DIST_DIR, 'stockfish', file));
+        logSuccess(`Copied ${file} from ${path.relative(PUBLIC_DIR, sourceDir) || '.'}`);
     }
 }
 

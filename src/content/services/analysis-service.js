@@ -151,6 +151,22 @@ export class AnalysisService {
         );
     }
 
+    async isWasmCompatible(wasmPath) {
+        try {
+            const response = await fetch(chrome.runtime.getURL(wasmPath));
+            if (!response.ok) {
+                return false;
+            }
+
+            const bytes = await response.arrayBuffer();
+            const module = await WebAssembly.compile(bytes);
+            const exports = WebAssembly.Module.exports(module).map((entry) => entry.name);
+            return exports.includes('init') && exports.includes('uci_command');
+        } catch (_error) {
+            return false;
+        }
+    }
+
     createBlobStockfishWorker(scriptPath, wasmPath) {
         const scriptUrl = chrome.runtime.getURL(scriptPath);
         const wasmUrl = chrome.runtime.getURL(wasmPath);
@@ -186,11 +202,24 @@ export class AnalysisService {
             ['stockfish.js', 'stockfish/stockfish.wasm']
         ];
 
+        const compatibilityByWasm = new Map();
+        for (const [, wasmPath] of workerPaths) {
+            if (!compatibilityByWasm.has(wasmPath)) {
+                compatibilityByWasm.set(wasmPath, await this.isWasmCompatible(wasmPath));
+            }
+        }
+
+        const compatibleWorkerPaths = workerPaths.filter(([, wasmPath]) => compatibilityByWasm.get(wasmPath));
+        if (compatibleWorkerPaths.length === 0) {
+            this.localEngineUnavailableReason = 'Bundled Stockfish JS/WASM files are incompatible (missing init/uci_command exports).';
+            throw new Error('Local Stockfish worker startup skipped: incompatible wasm exports');
+        }
+
         this.localEngineInitPromise = new Promise((resolve, reject) => {
             const startupErrors = [];
 
             const tryPath = (index) => {
-                if (index >= workerPaths.length) {
+                if (index >= compatibleWorkerPaths.length) {
                     const startupSummary = startupErrors.join(' | ');
                     const accessBlocked = startupErrors.length > 0 && startupErrors.every((entry) => entry.includes('cannot be accessed from origin'));
                     const wasmApiMismatch = startupErrors.some((entry) => entry.includes('Cannot call unknown function init') || entry.includes('Cannot call unknown function uci_command'));
@@ -207,7 +236,7 @@ export class AnalysisService {
                     return;
                 }
 
-                const [scriptPath, wasmPath] = workerPaths[index];
+                const [scriptPath, wasmPath] = compatibleWorkerPaths[index];
                 let worker;
                 let revokeWorkerUrl = null;
 
