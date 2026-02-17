@@ -24,6 +24,7 @@ export class AnalysisService {
         this.onMoveCallback = null;
         this.onErrorCallback = null;
         this.analysisTimeoutId = null;
+        this.localEngineUnavailableReason = null;
     }
 
     /**
@@ -111,6 +112,13 @@ export class AnalysisService {
                     }
                 })
                 .catch((fallbackError) => {
+                    const fallbackMessage = fallbackError && fallbackError.message ? fallbackError.message : String(fallbackError);
+
+                    if (fallbackMessage.includes('cannot be accessed from origin')) {
+                        this.localEngineUnavailableReason = 'Local Stockfish fallback is blocked by the page origin/CSP in this browser context.';
+                        this.useLocalEngine = false;
+                    }
+
                     logger.error('Local fallback initialization failed:', fallbackError);
                 });
         }
@@ -122,6 +130,10 @@ export class AnalysisService {
     }
 
     shouldUseLocalEngineFallback(error) {
+        if (this.localEngineUnavailableReason) {
+            return false;
+        }
+
         const text = typeof error === 'string' ? error : '';
 
         return (
@@ -155,7 +167,14 @@ export class AnalysisService {
 
             const tryPath = (index) => {
                 if (index >= workerPaths.length) {
-                    reject(new Error(`Local Stockfish worker startup failed. Tried: ${startupErrors.join(' | ')}`));
+                    const startupSummary = startupErrors.join(' | ');
+                    const accessBlocked = startupErrors.length > 0 && startupErrors.every((entry) => entry.includes('cannot be accessed from origin'));
+
+                    if (accessBlocked) {
+                        this.localEngineUnavailableReason = 'Local Stockfish fallback is blocked by page origin/CSP restrictions.';
+                    }
+
+                    reject(new Error(`Local Stockfish worker startup failed. Tried: ${startupSummary}`));
                     return;
                 }
 
@@ -263,6 +282,7 @@ export class AnalysisService {
         if (this.analysisTimeoutId) {
             clearTimeout(this.analysisTimeoutId);
             this.analysisTimeoutId = null;
+        this.localEngineUnavailableReason = null;
         }
     }
 
@@ -295,7 +315,10 @@ export class AnalysisService {
         }
 
         if (!this.port) {
-            this.handleError('Unable to connect to extension background process. Reload extension and page.');
+            const reason = this.localEngineUnavailableReason
+                ? ` ${this.localEngineUnavailableReason}`
+                : '';
+            this.handleError(`Unable to connect to extension background process. Reload extension and page.${reason}`);
             return;
         }
 
