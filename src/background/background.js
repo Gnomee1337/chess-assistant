@@ -77,6 +77,57 @@ function getStockfishScriptCandidates() {
     ];
 }
 
+function importStockfishFactory(paths) {
+    if (typeof globalThis.importScripts !== 'function') {
+        throw new Error('importScripts is unavailable in this service worker context');
+    }
+
+    const errors = [];
+
+    for (const path of paths) {
+        const url = chrome.runtime.getURL(path);
+        try {
+            globalThis.importScripts(url);
+        } catch (error) {
+            errors.push(`${path}: ${error?.message || error}`);
+            continue;
+        }
+
+        if (typeof globalThis.STOCKFISH === 'function') {
+            return path;
+        }
+
+        errors.push(`${path}: STOCKFISH factory unavailable after import`);
+    }
+
+    throw new Error(`Failed to import Stockfish script. Tried: ${errors.join(' | ')}`);
+}
+
+function createStockfishFactoryEngine(paths) {
+    const scriptPath = importStockfishFactory(paths);
+    const scriptDir = scriptPath.includes('/') ? scriptPath.split('/').slice(0, -1).join('/') : '';
+    const wasmCandidates = [
+        scriptDir ? `${scriptDir}/stockfish.wasm` : 'stockfish.wasm',
+        'stockfish.wasm',
+        'stockfish/stockfish.wasm',
+        'public/stockfish/stockfish.wasm'
+    ];
+
+    const errors = [];
+
+    for (const wasmPath of wasmCandidates) {
+        try {
+            const engine = globalThis.STOCKFISH(chrome.runtime.getURL(wasmPath));
+            console.log('Background - Using Stockfish factory assets:', scriptPath, wasmPath);
+            return { engine, scriptPath, wasmPath };
+        } catch (error) {
+            errors.push(`${wasmPath}: ${error?.message || error}`);
+        }
+    }
+
+    throw new Error(`Failed to initialize STOCKFISH factory. Script: ${scriptPath}. Wasm tries: ${errors.join(' | ')}`);
+}
+
 function createStockfishWorker(paths) {
     if (typeof Worker !== 'function') {
         throw new Error('Worker constructor is unavailable in this service worker context');
@@ -100,8 +151,16 @@ function createStockfishWorker(paths) {
 
 function createLocalStockfishEngine() {
     const scriptPaths = getStockfishScriptCandidates();
-    const { engine, path } = createStockfishWorker(scriptPaths);
-    console.log('Background - Stockfish worker bootstrap selected:', path);
+
+    try {
+        const { engine, path } = createStockfishWorker(scriptPaths);
+        console.log('Background - Stockfish worker bootstrap selected:', path);
+        return engine;
+    } catch (workerError) {
+        console.warn('Background - Worker bootstrap failed, trying importScripts factory fallback:', workerError?.message || workerError);
+    }
+
+    const { engine } = createStockfishFactoryEngine(scriptPaths);
     return engine;
 }
 
