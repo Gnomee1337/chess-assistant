@@ -2,7 +2,7 @@
  * Chess board position parser for Chess.com
  */
 
-import { PIECE_CHARS, SELECTORS } from '../../shared/constants.js';
+import { SELECTORS } from '../../shared/constants.js';
 import { FENValidator } from './fen-validator.js';
 import { Logger } from '../../shared/logger.js';
 
@@ -118,18 +118,55 @@ export class BoardParser {
      * @returns {Object|null} {char, rank, file}
      */
     static parsePieceElement(piece) {
-        const classes = piece.className;
+        const classes = piece.className || '';
         const pieceChar = this.getPieceChar(classes);
 
         if (!pieceChar) return null;
 
         const squareMatch = classes.match(/square-(\d)(\d)/);
-        if (!squareMatch) return null;
+        if (squareMatch) {
+            return {
+                char: pieceChar,
+                file: parseInt(squareMatch[1], 10) - 1,
+                rank: parseInt(squareMatch[2], 10) - 1
+            };
+        }
+
+        return this.parseLichessPieceElement(piece, pieceChar);
+    }
+
+    static parseLichessPieceElement(piece, pieceChar) {
+        const boardElement = piece.closest('cg-board');
+        if (!boardElement) return null;
+
+        const boardRect = boardElement.getBoundingClientRect();
+        if (!boardRect.width || !boardRect.height) return null;
+
+        const transform = piece.style.transform || '';
+        const translateMatch = transform.match(/translate\(([-\d.]+)px(?:,\s*([-\d.]+)px)?\)/);
+        if (!translateMatch) return null;
+
+        const x = parseFloat(translateMatch[1]);
+        const y = parseFloat(translateMatch[2] || '0');
+        if (Number.isNaN(x) || Number.isNaN(y)) return null;
+
+        const squareSize = boardRect.width / 8;
+        if (!squareSize) return null;
+
+        const col = Math.round(x / squareSize);
+        const row = Math.round(y / squareSize);
+        if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+
+        const wrapClassName = piece.closest('.cg-wrap')?.className || '';
+        const isBlackOrientation = wrapClassName.includes('orientation-black');
+
+        const file = isBlackOrientation ? 7 - col : col;
+        const boardRow = isBlackOrientation ? 7 - row : row;
 
         return {
             char: pieceChar,
-            file: parseInt(squareMatch[1]) - 1,
-            rank: parseInt(squareMatch[2]) - 1
+            file,
+            rank: 7 - boardRow
         };
     }
 
@@ -141,7 +178,9 @@ export class BoardParser {
     static getPieceChar(classes) {
         const pieceMap = {
             'wp': 'P', 'wn': 'N', 'wb': 'B', 'wr': 'R', 'wq': 'Q', 'wk': 'K',
-            'bp': 'p', 'bn': 'n', 'bb': 'b', 'br': 'r', 'bq': 'q', 'bk': 'k'
+            'bp': 'p', 'bn': 'n', 'bb': 'b', 'br': 'r', 'bq': 'q', 'bk': 'k',
+            'white pawn': 'P', 'white knight': 'N', 'white bishop': 'B', 'white rook': 'R', 'white queen': 'Q', 'white king': 'K',
+            'black pawn': 'p', 'black knight': 'n', 'black bishop': 'b', 'black rook': 'r', 'black queen': 'q', 'black king': 'k'
         };
 
         for (const [key, value] of Object.entries(pieceMap)) {
@@ -194,6 +233,11 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
+        const lichessTurn = this.determineTurnFromLichessClock();
+        if (lichessTurn) {
+            return lichessTurn;
+        }
+
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
             return turnFromHighlights;
@@ -213,6 +257,39 @@ export class BoardParser {
         }
 
         return 'w'; // Default to white
+    }
+
+    static determineTurnFromLichessClock() {
+        const topClock = document.querySelector('.rclock-top');
+        const bottomClock = document.querySelector('.rclock-bottom');
+
+        if (topClock?.classList.contains('rclock-turn')) {
+            return this.getColorForPlayerPosition('top');
+        }
+
+        if (bottomClock?.classList.contains('rclock-turn')) {
+            return this.getColorForPlayerPosition('bottom');
+        }
+
+        return null;
+    }
+
+    static getColorForPlayerPosition(position) {
+        const boardWrap = document.querySelector('.cg-wrap');
+        if (!boardWrap) return null;
+
+        const isWhiteOrientation = boardWrap.classList.contains('orientation-white');
+        const isBottomPlayerWhite = isWhiteOrientation;
+
+        if (position === 'bottom') {
+            return isBottomPlayerWhite ? 'w' : 'b';
+        }
+
+        if (position === 'top') {
+            return isBottomPlayerWhite ? 'b' : 'w';
+        }
+
+        return null;
     }
 
     /**

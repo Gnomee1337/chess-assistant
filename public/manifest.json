@@ -5,7 +5,8 @@
   "description": "Free chess analysis assistant using Stockfish for chess.com",
   "permissions": [
     "storage",
-    "https://www.chess.com/*"
+    "https://www.chess.com/*",
+    "https://lichess.org/*"
   ],
   "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
   "background": {
@@ -18,7 +19,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.chess.com/*"
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
       ],
       "js": [
         "browser-polyfill.js",

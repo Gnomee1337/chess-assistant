@@ -1,6 +1,6 @@
 # Chess Assistant
 
-Free chess analysis assistant for Chess.com using Stockfish.
+Free chess analysis assistant for Chess.com and Lichess using Stockfish.
 
 ## Opening Explorer data source
 

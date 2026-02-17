@@ -36,9 +36,9 @@ export const COLORS = {
 };
 
 export const SELECTORS = {
-    BOARD: 'wc-chess-board, chess-board, .board',
-    MOVE_LIST: '.move-list, wc-simple-move-list',
-    PIECES: '[class*="piece"]',
+    BOARD: 'wc-chess-board, chess-board, .board, cg-board',
+    MOVE_LIST: '.move-list, wc-simple-move-list, rm6 l4x',
+    PIECES: '[class*="piece"], piece',
     ARROWS_SVG: 'svg.arrows'
 };
 
