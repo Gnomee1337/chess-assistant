@@ -1,8 +1,8 @@
 /**
- * Chess board position parser for Chess.com
+ * Chess board position parser for Chess.com and Lichess
  */
 
-import { PIECE_CHARS, SELECTORS } from '../../shared/constants.js';
+import { SELECTORS } from '../../shared/constants.js';
 import { FENValidator } from './fen-validator.js';
 import { Logger } from '../../shared/logger.js';
 
@@ -10,7 +10,7 @@ const logger = new Logger('BoardParser');
 
 export class BoardParser {
     /**
-     * Get current FEN from chess.com board
+     * Get current FEN from supported board providers
      * @returns {string|null} FEN string or null if unavailable
      */
     static getCurrentFEN() {
@@ -83,7 +83,7 @@ export class BoardParser {
                 return null;
             }
 
-            const pieces = chessBoard.querySelectorAll(SELECTORS.PIECES);
+            const pieces = this.getPieceElements(chessBoard);
             if (pieces.length === 0) {
                 logger.warn('No pieces found');
                 return null;
@@ -112,24 +112,79 @@ export class BoardParser {
         }
     }
 
+    static getPieceElements(chessBoard) {
+        const tagName = chessBoard.tagName?.toLowerCase();
+
+        if (tagName === 'cg-board') {
+            // Lichess: only board piece nodes are direct children of cg-board.
+            // Ignore helper/animation elements such as ghost pieces.
+            try {
+                return Array.from(chessBoard.querySelectorAll(':scope > piece'))
+                    .filter(piece => !piece.classList.contains('ghost'));
+            } catch (error) {
+                return Array.from(chessBoard.children)
+                    .filter(node => node.tagName?.toLowerCase() === 'piece' && !node.classList.contains('ghost'));
+            }
+        }
+
+        return Array.from(chessBoard.querySelectorAll(SELECTORS.PIECES));
+    }
+
     /**
      * Parse a piece element to get piece info
      * @param {Element} piece - Piece DOM element
      * @returns {Object|null} {char, rank, file}
      */
     static parsePieceElement(piece) {
-        const classes = piece.className;
+        const classes = piece.className || '';
         const pieceChar = this.getPieceChar(classes);
 
         if (!pieceChar) return null;
 
         const squareMatch = classes.match(/square-(\d)(\d)/);
-        if (!squareMatch) return null;
+        if (squareMatch) {
+            return {
+                char: pieceChar,
+                file: parseInt(squareMatch[1], 10) - 1,
+                rank: parseInt(squareMatch[2], 10) - 1
+            };
+        }
+
+        return this.parseLichessPieceElement(piece, pieceChar);
+    }
+
+    static parseLichessPieceElement(piece, pieceChar) {
+        const boardElement = piece.closest('cg-board');
+        if (!boardElement) return null;
+
+        const boardRect = boardElement.getBoundingClientRect();
+        if (!boardRect.width || !boardRect.height) return null;
+
+        const transform = piece.style.transform || '';
+        const translateMatch = transform.match(/translate\(([-\d.]+)px(?:,\s*([-\d.]+)px)?\)/);
+        if (!translateMatch) return null;
+
+        const x = parseFloat(translateMatch[1]);
+        const y = parseFloat(translateMatch[2] || '0');
+        if (Number.isNaN(x) || Number.isNaN(y)) return null;
+
+        const squareSize = boardRect.width / 8;
+        if (!squareSize) return null;
+
+        const col = Math.round(x / squareSize);
+        const row = Math.round(y / squareSize);
+        if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+
+        const wrapClassName = piece.closest('.cg-wrap')?.className || '';
+        const isBlackOrientation = wrapClassName.includes('orientation-black');
+
+        const file = isBlackOrientation ? 7 - col : col;
+        const boardRow = isBlackOrientation ? 7 - row : row;
 
         return {
             char: pieceChar,
-            file: parseInt(squareMatch[1]) - 1,
-            rank: parseInt(squareMatch[2]) - 1
+            file,
+            rank: 7 - boardRow
         };
     }
 
@@ -139,15 +194,42 @@ export class BoardParser {
      * @returns {string|null}
      */
     static getPieceChar(classes) {
-        const pieceMap = {
-            'wp': 'P', 'wn': 'N', 'wb': 'B', 'wr': 'R', 'wq': 'Q', 'wk': 'K',
-            'bp': 'p', 'bn': 'n', 'bb': 'b', 'br': 'r', 'bq': 'q', 'bk': 'k'
+        const classTokens = new Set(
+            String(classes)
+                .split(/\s+/)
+                .map(token => token.trim())
+                .filter(Boolean)
+        );
+
+        // Chess.com piece classes (single-token shorthand)
+        const chessComPieceMap = {
+            wp: 'P', wn: 'N', wb: 'B', wr: 'R', wq: 'Q', wk: 'K',
+            bp: 'p', bn: 'n', bb: 'b', br: 'r', bq: 'q', bk: 'k'
         };
 
-        for (const [key, value] of Object.entries(pieceMap)) {
-            if (classes.includes(key)) {
-                return value;
+        for (const [token, char] of Object.entries(chessComPieceMap)) {
+            if (classTokens.has(token)) {
+                return char;
             }
+        }
+
+        // Lichess piece classes (two-token format: "white pawn", "black king", etc.)
+        if (classTokens.has('white')) {
+            if (classTokens.has('pawn')) return 'P';
+            if (classTokens.has('knight')) return 'N';
+            if (classTokens.has('bishop')) return 'B';
+            if (classTokens.has('rook')) return 'R';
+            if (classTokens.has('queen')) return 'Q';
+            if (classTokens.has('king')) return 'K';
+        }
+
+        if (classTokens.has('black')) {
+            if (classTokens.has('pawn')) return 'p';
+            if (classTokens.has('knight')) return 'n';
+            if (classTokens.has('bishop')) return 'b';
+            if (classTokens.has('rook')) return 'r';
+            if (classTokens.has('queen')) return 'q';
+            if (classTokens.has('king')) return 'k';
         }
 
         return null;
@@ -194,6 +276,11 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
+        const lichessTurn = this.determineTurnFromLichessClock();
+        if (lichessTurn) {
+            return lichessTurn;
+        }
+
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
             return turnFromHighlights;
@@ -213,6 +300,39 @@ export class BoardParser {
         }
 
         return 'w'; // Default to white
+    }
+
+    static determineTurnFromLichessClock() {
+        const topClock = document.querySelector('.rclock-top');
+        const bottomClock = document.querySelector('.rclock-bottom');
+
+        if (topClock?.classList.contains('rclock-turn')) {
+            return this.getColorForPlayerPosition('top');
+        }
+
+        if (bottomClock?.classList.contains('rclock-turn')) {
+            return this.getColorForPlayerPosition('bottom');
+        }
+
+        return null;
+    }
+
+    static getColorForPlayerPosition(position) {
+        const boardWrap = document.querySelector('.cg-wrap');
+        if (!boardWrap) return null;
+
+        const isWhiteOrientation = boardWrap.classList.contains('orientation-white');
+        const isBottomPlayerWhite = isWhiteOrientation;
+
+        if (position === 'bottom') {
+            return isBottomPlayerWhite ? 'w' : 'b';
+        }
+
+        if (position === 'top') {
+            return isBottomPlayerWhite ? 'b' : 'w';
+        }
+
+        return null;
     }
 
     /**

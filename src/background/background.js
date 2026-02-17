@@ -24,7 +24,28 @@ function safePostToPort(port, payload) {
 
 function isTrustedPort(port) {
     const senderUrl = port?.sender?.url;
-    return typeof senderUrl === 'string' && senderUrl.startsWith('https://www.chess.com/');
+    if (typeof senderUrl !== 'string') {
+        return false;
+    }
+
+    try {
+        const url = new URL(senderUrl);
+        if (url.protocol !== 'https:') {
+            return false;
+        }
+
+        const trustedHosts = new Set([
+            'www.chess.com',
+            'chess.com',
+            'lichess.org',
+            'www.lichess.org'
+        ]);
+
+        return trustedHosts.has(url.hostname);
+    } catch (error) {
+        console.warn('Background - Could not parse sender URL:', senderUrl, error);
+        return false;
+    }
 }
 
 function normalizeDepth(depth) {

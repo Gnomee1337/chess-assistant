@@ -7,7 +7,8 @@
     "storage",
     "https://www.chess.com/*",
     "tabs",
-    "activeTab"
+    "activeTab",
+    "https://lichess.org/*"
   ],
   "content_security_policy": "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'self'",
   "background": {
@@ -19,7 +20,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.chess.com/*"
+        "https://www.chess.com/*",
+        "https://lichess.org/*"
       ],
       "js": [
         "content.js"
