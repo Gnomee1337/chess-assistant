@@ -77,15 +77,8 @@ function isValidAnalyzeMessage(msg) {
 
 function createLocalStockfishEngine() {
     const stockfishScriptUrl = chrome.runtime.getURL('stockfish.js');
-
-    try {
-        // Preferred path: dedicated worker, where Stockfish's wasm loader is most reliable.
-        return new Worker(stockfishScriptUrl);
-    } catch (workerError) {
-        console.warn('Background - Dedicated Stockfish worker unavailable, trying in-service-worker fallback:', workerError);
-    }
-
     const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
+
     const importScriptsFn =
         typeof globalThis.importScripts === 'function'
             ? globalThis.importScripts.bind(globalThis)
@@ -115,25 +108,6 @@ async function createCdnStockfishEngine() {
     }
 
     return stockfishFactory();
-}
-
-
-async function waitForStockfishReady(timeoutMs = STOCKFISH_READY_TIMEOUT_MS) {
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeoutMs) {
-        if (stockfishReady && stockfish) {
-            return true;
-        }
-
-        if (!stockfish && !stockfishInitPromise) {
-            return false;
-        }
-
-        await delay(STOCKFISH_READY_POLL_MS);
-    }
-
-    return false;
 }
 
 function initStockfish(preferredSource = stockfishSource) {
