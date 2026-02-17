@@ -208,7 +208,7 @@ class ChessAssistant {
     }
 
     getPlayedMoves() {
-        const nodes = document.querySelectorAll('.move-list .node, wc-simple-move-list .node');
+        const nodes = document.querySelectorAll('.move-list .node, wc-simple-move-list .node, rm6 l4x kwdb');
         const moves = [];
 
         nodes.forEach((node) => {
@@ -260,7 +260,7 @@ class ChessAssistant {
         this.moveObserver = new MutationObserver(() => {
             if (!this.overlay.autoAnalyze || !this.overlay.isEnabled) return;
 
-            const currentMoveCount = document.querySelectorAll('.move-list .node').length;
+            const currentMoveCount = this.getMoveCount();
 
             if (currentMoveCount > this.lastMoveCount) {
                 this.lastMoveCount = currentMoveCount;
@@ -279,7 +279,16 @@ class ChessAssistant {
             subtree: true
         });
 
-        this.lastMoveCount = document.querySelectorAll('.move-list .node').length;
+        this.lastMoveCount = this.getMoveCount();
+    }
+
+    getMoveCount() {
+        const chessComMoves = document.querySelectorAll('.move-list .node').length;
+        if (chessComMoves > 0) {
+            return chessComMoves;
+        }
+
+        return document.querySelectorAll('rm6 l4x kwdb').length;
     }
 
     /**
