@@ -72,15 +72,24 @@ function createLocalStockfishEngine() {
     const stockfishScriptUrl = chrome.runtime.getURL('stockfish.js');
     const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
 
-    if (typeof self.STOCKFISH !== 'function') {
-        self.importScripts(stockfishScriptUrl);
+    const importScriptsFn =
+        typeof globalThis.importScripts === 'function'
+            ? globalThis.importScripts.bind(globalThis)
+            : null;
+
+    if (!importScriptsFn) {
+        throw new Error('importScripts is unavailable in this service worker context');
     }
 
-    if (typeof self.STOCKFISH !== 'function') {
+    if (typeof globalThis.STOCKFISH !== 'function') {
+        importScriptsFn(stockfishScriptUrl);
+    }
+
+    if (typeof globalThis.STOCKFISH !== 'function') {
         throw new Error('STOCKFISH factory unavailable after importScripts');
     }
 
-    return self.STOCKFISH(wasmUrl);
+    return globalThis.STOCKFISH(wasmUrl);
 }
 
 async function createCdnStockfishEngine() {
