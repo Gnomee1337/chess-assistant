@@ -22,9 +22,9 @@
     },
     "devDependencies": {
         "archiver": "^6.0.1",
+        "chokidar": "^3.5.3",
         "eslint": "^8.50.0",
-        "fs-extra": "^11.1.1",
-        "chokidar": "^3.5.3"
+        "fs-extra": "^11.1.1"
     },
     "keywords": [
         "chess",
@@ -45,6 +45,6 @@
         "url": "https://github.com/yourusername/chess-assistant/issues"
     },
     "dependencies": {
-        "@chess-openings/eco.json": "^1.0.6"
+        "@chess-openings/eco.json": "^1.1.0"
     }
 }
