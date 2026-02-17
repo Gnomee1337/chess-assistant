@@ -68,9 +68,37 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function createLocalStockfishEngine() {
-    const stockfishScriptUrl = chrome.runtime.getURL('stockfish.js');
-    const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
+async function resolveFirstAvailableAsset(paths) {
+    for (const path of paths) {
+        const url = chrome.runtime.getURL(path);
+
+        try {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (response.ok) {
+                return { path, url };
+            }
+        } catch (error) {
+            // Continue trying alternate paths.
+        }
+    }
+
+    throw new Error(`Asset not found in extension package. Tried: ${paths.join(', ')}`);
+}
+
+async function createLocalStockfishEngine() {
+    const stockfishScript = await resolveFirstAvailableAsset([
+        'stockfish.js',
+        'stockfish/stockfish.js',
+        'public/stockfish/stockfish.js'
+    ]);
+
+    const wasmAsset = await resolveFirstAvailableAsset([
+        'stockfish.wasm',
+        'stockfish/stockfish.wasm',
+        'public/stockfish/stockfish.wasm'
+    ]);
+
+    console.log('Background - Using Stockfish assets:', stockfishScript.path, wasmAsset.path);
 
     const importScriptsFn =
         typeof globalThis.importScripts === 'function'
@@ -82,14 +110,18 @@ function createLocalStockfishEngine() {
     }
 
     if (typeof globalThis.STOCKFISH !== 'function') {
-        importScriptsFn(stockfishScriptUrl);
+        try {
+            importScriptsFn(stockfishScript.url);
+        } catch (error) {
+            throw new Error(`Failed to import Stockfish script (${stockfishScript.path}): ${error?.message || error}`);
+        }
     }
 
     if (typeof globalThis.STOCKFISH !== 'function') {
         throw new Error('STOCKFISH factory unavailable after importScripts');
     }
 
-    return globalThis.STOCKFISH(wasmUrl);
+    return globalThis.STOCKFISH(wasmAsset.url);
 }
 
 function initStockfish() {
@@ -101,7 +133,7 @@ function initStockfish() {
 
         try {
             console.log('Background - Loading local Stockfish bundle');
-            stockfish = createLocalStockfishEngine();
+            stockfish = await createLocalStockfishEngine();
 
             stockfish.onmessage = function (event) {
                 const message = event && event.data !== undefined ? event.data : event;
