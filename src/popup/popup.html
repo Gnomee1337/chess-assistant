@@ -10,27 +10,85 @@
   <div class="container">
     <h2>♟️ Chess Assistant</h2>
 
-    <div class="setting-group">
-      <label for="depth">Analysis Depth</label>
-      <input type="range" id="depth" min="5" max="25" value="15" step="1" />
-      <div class="depth-value">
-        <span class="depth-display" id="depthValue">15</span>
-        <div class="depth-label">
-          <div class="depth-subtext">moves ahead</div>
+    <div class="tabs" role="tablist" aria-label="Settings sections">
+      <button class="tab-btn active" id="analysisTabBtn" data-tab="analysis" role="tab" aria-selected="true">Analysis</button>
+      <button class="tab-btn" id="colorsTabBtn" data-tab="colors" role="tab" aria-selected="false">Colors</button>
+    </div>
+
+    <div class="tab-panel active" id="analysisTab" role="tabpanel" aria-labelledby="analysisTabBtn">
+      <div class="setting-group">
+        <label for="depth">Analysis Depth</label>
+        <input type="range" id="depth" min="5" max="25" value="15" step="1" />
+        <div class="depth-value">
+          <span class="depth-display" id="depthValue">15</span>
+          <div class="depth-label">
+            <div class="depth-subtext">moves ahead</div>
+          </div>
+        </div>
+        <div class="depth-hint">
+          • 5-10: Fast, basic analysis<br />
+          • 11-18: Balanced (recommended)<br />
+          • 19-25: Deep, slower analysis
         </div>
       </div>
-      <div class="depth-hint">
-        • 5-10: Fast, basic analysis<br />
-        • 11-18: Balanced (recommended)<br />
-        • 19-25: Deep, slower analysis
+
+      <div class="info">
+        <strong>💡 How to use:</strong><br />
+        1. Go to a game on chess.com<br />
+        2. Click "Analyze" button in the overlay<br />
+        3. View top 3 suggested moves with scores
       </div>
     </div>
 
-    <div class="info">
-      <strong>💡 How to use:</strong><br />
-      1. Go to a game on chess.com<br />
-      2. Click "Analyze" button in the overlay<br />
-      3. View top 3 suggested moves with scores
+    <div class="tab-panel" id="colorsTab" role="tabpanel" aria-labelledby="colorsTabBtn" hidden>
+      <div class="setting-group">
+        <div class="picker-title">Highlight color</div>
+        <div class="color-picker" id="highlightPicker" data-picker="highlight">
+          <div class="picker-header">
+            <div class="color-swatch" id="highlightSwatch"></div>
+            <input class="hex-input" id="highlightHex" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="7" value="#9bc700" aria-label="Highlight hex color" />
+          </div>
+          <div class="slider-grid">
+            <label>R <input id="highlightR" type="range" min="0" max="255" value="155" /></label>
+            <label>G <input id="highlightG" type="range" min="0" max="255" value="199" /></label>
+            <label>B <input id="highlightB" type="range" min="0" max="255" value="0" /></label>
+          </div>
+          <div class="preset-row" id="highlightPresets"></div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="picker-title">Arrow color</div>
+        <div class="color-picker" id="arrowPicker" data-picker="arrow">
+          <div class="picker-header">
+            <div class="color-swatch" id="arrowSwatch"></div>
+            <input class="hex-input" id="arrowHex" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="7" value="#9bc700" aria-label="Arrow hex color" />
+          </div>
+          <div class="slider-grid">
+            <label>R <input id="arrowR" type="range" min="0" max="255" value="155" /></label>
+            <label>G <input id="arrowG" type="range" min="0" max="255" value="199" /></label>
+            <label>B <input id="arrowB" type="range" min="0" max="255" value="0" /></label>
+          </div>
+          <div class="preset-row" id="arrowPresets"></div>
+        </div>
+      </div>
+
+      <div class="setting-group examples">
+        <div class="example-title">Preview</div>
+        <div class="example-board">
+          <div class="example-square square-from"></div>
+          <div class="example-square square-to"></div>
+          <svg class="example-arrow" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <marker id="exampleArrowHead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <polygon points="0 0, 8 4, 0 8" />
+              </marker>
+            </defs>
+            <line x1="18" y1="82" x2="82" y2="18" marker-end="url(#exampleArrowHead)" />
+          </svg>
+        </div>
+        <div class="preview-note">Live preview updates instantly while you tweak the sliders.</div>
+      </div>
     </div>
 
     <button class="save-btn" id="saveBtn">Save Settings</button>
