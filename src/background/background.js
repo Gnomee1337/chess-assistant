@@ -10,6 +10,7 @@ let stockfishInitPromise = null;
 
 const CDN_STOCKFISH_ESM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
 
+// Analysis limits to prevent abuse and ensure responsiveness
 const ANALYSIS_LIMITS = {
     MIN_DEPTH: 5,
     MAX_DEPTH: 25,
