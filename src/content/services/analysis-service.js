@@ -124,49 +124,34 @@ export class AnalysisService {
             return this.localEngineInitPromise;
         }
 
-        const candidates = [
-            { script: 'stockfish.js', wasm: 'stockfish.wasm' },
-            { script: 'stockfish/stockfish.js', wasm: 'stockfish/stockfish.wasm' },
-            { script: 'stockfish.js', wasm: 'stockfish/stockfish.wasm' },
-            { script: 'stockfish/stockfish.js', wasm: 'stockfish.wasm' }
-        ];
+        const workerPaths = ['stockfish.js', 'stockfish/stockfish.js'];
 
         this.localEngineInitPromise = new Promise((resolve, reject) => {
             const startupErrors = [];
 
-            const tryCandidate = (index) => {
-                if (index >= candidates.length) {
+            const tryPath = (index) => {
+                if (index >= workerPaths.length) {
                     reject(new Error(`Local Stockfish worker startup failed. Tried: ${startupErrors.join(' | ')}`));
                     return;
                 }
 
-                const candidate = candidates[index];
-                const scriptUrl = chrome.runtime.getURL(candidate.script);
-                const wasmUrl = chrome.runtime.getURL(candidate.wasm);
+                const path = workerPaths[index];
+                let worker;
 
-                const workerSource = `
-                    self.onmessage = undefined;
-                    importScripts(${JSON.stringify(scriptUrl)});
-                    if (typeof self.STOCKFISH !== 'function') {
-                        throw new Error('STOCKFISH factory missing after import');
-                    }
-                    const engine = self.STOCKFISH(${JSON.stringify(wasmUrl)});
-                    self.onmessage = (event) => engine.postMessage(event.data, true);
-                    engine.onmessage = (line) => self.postMessage(line);
-                    engine.onerror = (error) => self.postMessage('info string worker-error ' + (error && error.message ? error.message : error));
-                `;
+                try {
+                    worker = new Worker(chrome.runtime.getURL(path));
+                } catch (error) {
+                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    tryPath(index + 1);
+                    return;
+                }
 
-                const blob = new Blob([workerSource], { type: 'application/javascript' });
-                const workerUrl = URL.createObjectURL(blob);
-                const worker = new Worker(workerUrl);
-                URL.revokeObjectURL(workerUrl);
-
-                let ready = false;
-                let finished = false;
+                let resolved = false;
+                let closed = false;
 
                 const cleanup = () => {
-                    if (finished) return;
-                    finished = true;
+                    if (closed) return;
+                    closed = true;
                     clearInterval(pingTimer);
                     clearTimeout(timeoutTimer);
                 };
@@ -175,11 +160,12 @@ export class AnalysisService {
                     const message = event && event.data !== undefined ? event.data : event;
 
                     if (typeof message === 'string' && (message.includes('uciok') || message.includes('readyok'))) {
-                        if (!ready) {
-                            ready = true;
+                        if (!resolved) {
+                            resolved = true;
                             cleanup();
                             this.localEngine = worker;
                             this.localEngineReady = true;
+                            console.log('AnalysisService - Local Stockfish worker ready from', path);
                             resolve();
                         }
                     }
@@ -192,35 +178,41 @@ export class AnalysisService {
                     }
                 };
 
-                worker.onerror = (engineError) => {
-                    cleanup();
-                    worker.terminate();
-                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${engineError?.message || engineError}`);
-                    tryCandidate(index + 1);
-                };
-
-                const pingTimer = setInterval(() => {
-                    try {
-                        worker.postMessage('uci');
-                        worker.postMessage('isready');
-                    } catch (error) {
-                        cleanup();
-                        worker.terminate();
-                        startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${error?.message || error}`);
-                        tryCandidate(index + 1);
-                    }
-                }, 400);
-
-                const timeoutTimer = setTimeout(() => {
-                    if (ready) {
+                worker.onerror = (error) => {
+                    if (resolved) {
+                        this.localEngineReady = false;
+                        this.localEngine = null;
+                        this.handleError('Local Stockfish engine crashed. Please re-analyze.');
                         return;
                     }
 
                     cleanup();
                     worker.terminate();
-                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: startup timeout`);
-                    tryCandidate(index + 1);
-                }, 9000);
+                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    tryPath(index + 1);
+                };
+
+                const pingTimer = setInterval(() => {
+                    try {
+                        worker.postMessage('isready');
+                        worker.postMessage('uci');
+                    } catch (error) {
+                        if (!resolved) {
+                            cleanup();
+                            worker.terminate();
+                            startupErrors.push(`${path}: ${error?.message || error}`);
+                            tryPath(index + 1);
+                        }
+                    }
+                }, 700);
+
+                const timeoutTimer = setTimeout(() => {
+                    if (resolved) return;
+                    cleanup();
+                    worker.terminate();
+                    startupErrors.push(`${path}: startup timeout`);
+                    tryPath(index + 1);
+                }, 30000);
 
                 try {
                     worker.postMessage('uci');
@@ -228,12 +220,12 @@ export class AnalysisService {
                 } catch (error) {
                     cleanup();
                     worker.terminate();
-                    startupErrors.push(`${candidate.script} + ${candidate.wasm}: ${error?.message || error}`);
-                    tryCandidate(index + 1);
+                    startupErrors.push(`${path}: ${error?.message || error}`);
+                    tryPath(index + 1);
                 }
             };
 
-            tryCandidate(0);
+            tryPath(0);
         }).finally(() => {
             this.localEngineInitPromise = null;
         });
