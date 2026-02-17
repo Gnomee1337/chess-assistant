@@ -6,6 +6,8 @@ let stockfishReady = false;
 let initAttempts = 0;
 let isAnalyzing = false;
 let stockfishInitPromise = null;
+let lastInitError = null;
+let nextRetryDelayMs = 1000;
 
 // Analysis limits to prevent abuse and ensure responsiveness
 const ANALYSIS_LIMITS = {
@@ -91,7 +93,7 @@ function createLocalStockfishEngine() {
 }
 
 function initStockfish() {
-    if (stockfish || stockfishInitPromise || initAttempts > 3) return;
+    if (stockfish || stockfishInitPromise) return;
 
     stockfishInitPromise = (async () => {
         initAttempts++;
@@ -108,6 +110,8 @@ function initStockfish() {
                 if (typeof message === 'string' && message.includes('uciok')) {
                     stockfishReady = true;
                     initAttempts = 0;
+                    lastInitError = null;
+                    nextRetryDelayMs = 1000;
                     console.log('Background - ✅ READY!');
                 }
 
@@ -138,13 +142,15 @@ function initStockfish() {
                     stockfishReady = false;
                     isAnalyzing = false;
                     stockfishInitPromise = null;
+                    lastInitError = error || new Error('stockfish-runtime-error');
+
+                    const retryDelay = nextRetryDelayMs;
+                    nextRetryDelayMs = Math.min(nextRetryDelayMs * 2, 15000);
 
                     setTimeout(() => {
-                        if (initAttempts < 3) {
-                            console.log('Background - Attempting to restart Stockfish...');
-                            initStockfish();
-                        }
-                    }, 1000);
+                        console.log('Background - Attempting to restart Stockfish...');
+                        initStockfish();
+                    }, retryDelay);
                 };
             }
 
@@ -155,6 +161,15 @@ function initStockfish() {
             stockfish = null;
             stockfishReady = false;
             stockfishInitPromise = null;
+            lastInitError = error;
+
+            const retryDelay = nextRetryDelayMs;
+            nextRetryDelayMs = Math.min(nextRetryDelayMs * 2, 15000);
+
+            setTimeout(() => {
+                console.log('Background - Retrying Stockfish init after failure...');
+                initStockfish();
+            }, retryDelay);
         } finally {
             if (stockfish) {
                 stockfishInitPromise = null;
@@ -178,6 +193,12 @@ function waitForStockfishReady(timeoutMs = 12000, pollIntervalMs = 100) {
             if (stockfishReady && stockfish) {
                 clearInterval(timer);
                 resolve();
+                return;
+            }
+
+            if (lastInitError && !stockfishInitPromise && !stockfish) {
+                clearInterval(timer);
+                reject(lastInitError);
                 return;
             }
 
@@ -286,7 +307,7 @@ chrome.runtime.onConnect.addListener(function (port) {
                         console.error('Background - Timeout waiting for Stockfish');
                         safePostToPort(currentAnalysisPort, {
                             type: 'stockfish-error',
-                            error: 'Stockfish is still starting. Please try again in a moment.'
+                            error: 'Stockfish engine is restarting. Please try again in a few seconds.'
                         });
                     });
             } else if (msg && msg.type === 'reset-engine') {
@@ -300,6 +321,8 @@ chrome.runtime.onConnect.addListener(function (port) {
                 isAnalyzing = false;
                 initAttempts = 0;
                 stockfishInitPromise = null;
+                lastInitError = null;
+                nextRetryDelayMs = 1000;
                 initStockfish();
             }
         });
