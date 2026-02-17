@@ -17,7 +17,7 @@ export class AnalysisService {
         this.localEngine = null;
         this.localEngineReady = false;
         this.localEngineInitPromise = null;
-        this.useLocalEngine = true;
+        this.useLocalEngine = false;
         this.isAnalyzing = false;
         this.depth = 15;
         this.lastFen = null;
@@ -90,7 +90,7 @@ export class AnalysisService {
         this.isAnalyzing = false;
 
         if (this.shouldUseLocalEngineFallback(error) && !this.useLocalEngine) {
-            this.useLocalEngine = true;
+            this.useLocalEngine = false;
             logger.warn('Switching to local content-script Stockfish fallback');
 
             this.ensureLocalEngineReady()
@@ -112,7 +112,7 @@ export class AnalysisService {
 
     shouldUseLocalEngineFallback(error) {
         const text = typeof error === 'string' ? error : '';
-        return text.includes('Stockfish files could not be loaded') || text.includes('engine is restarting');
+        return false;
     }
 
     async ensureLocalEngineReady() {

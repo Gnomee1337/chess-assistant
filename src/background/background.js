@@ -69,48 +69,6 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function importStockfishFactory(paths) {
-    const importScriptsFn =
-        typeof globalThis.importScripts === 'function'
-            ? globalThis.importScripts.bind(globalThis)
-            : null;
-
-    if (!importScriptsFn) {
-        throw new Error('importScripts is unavailable in this service worker context');
-    }
-
-    const importErrors = [];
-
-    for (const path of paths) {
-        const url = chrome.runtime.getURL(path);
-        const candidates = [path, `./${path}`, url];
-        let imported = false;
-
-        for (const candidate of candidates) {
-            try {
-                importScriptsFn(candidate);
-                imported = true;
-                break;
-            } catch (error) {
-                // Try next candidate form.
-            }
-        }
-
-        if (!imported) {
-            importErrors.push(`${path}: failed to load using ${candidates.join(', ')}`);
-            continue;
-        }
-
-        if (typeof globalThis.STOCKFISH === 'function') {
-            return { path, url };
-        }
-
-        importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
-    }
-
-    throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
-}
-
 function getStockfishScriptCandidates() {
     return [
         'stockfish.js',
@@ -142,39 +100,9 @@ function createStockfishWorker(paths) {
 
 function createLocalStockfishEngine() {
     const scriptPaths = getStockfishScriptCandidates();
-
-    try {
-        return createStockfishWorker(scriptPaths).engine;
-    } catch (workerError) {
-        console.warn('Background - Worker Stockfish bootstrap failed, trying importScripts fallback:', workerError?.message || workerError);
-    }
-
-    const stockfishScript = importStockfishFactory(scriptPaths);
-
-    const scriptDir = stockfishScript.path.includes('/')
-        ? stockfishScript.path.split('/').slice(0, -1).join('/')
-        : '';
-
-    const wasmCandidates = [
-        scriptDir ? `${scriptDir}/stockfish.wasm` : 'stockfish.wasm',
-        'stockfish.wasm',
-        'stockfish/stockfish.wasm',
-        'public/stockfish/stockfish.wasm'
-    ];
-
-    let lastFactoryError = null;
-    for (const wasmPath of wasmCandidates) {
-        try {
-            const wasmUrl = chrome.runtime.getURL(wasmPath);
-            const engine = globalThis.STOCKFISH(wasmUrl);
-            console.log('Background - Using Stockfish assets:', stockfishScript.path, wasmPath);
-            return engine;
-        } catch (error) {
-            lastFactoryError = error;
-        }
-    }
-
-    throw new Error(`Failed to initialize STOCKFISH factory with wasm candidates: ${wasmCandidates.join(', ')}. Last error: ${lastFactoryError?.message || lastFactoryError}`);
+    const { engine, path } = createStockfishWorker(scriptPaths);
+    console.log('Background - Stockfish worker bootstrap selected:', path);
+    return engine;
 }
 
 function clearReadinessPingTimer() {
