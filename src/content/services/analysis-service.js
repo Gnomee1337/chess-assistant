@@ -17,7 +17,7 @@ export class AnalysisService {
         this.localEngine = null;
         this.localEngineReady = false;
         this.localEngineInitPromise = null;
-        this.useLocalEngine = false;
+        this.useLocalEngine = true;
         this.isAnalyzing = false;
         this.depth = 15;
         this.lastFen = null;
@@ -29,6 +29,11 @@ export class AnalysisService {
      * Connect to background script
      */
     connect() {
+        if (this.useLocalEngine) {
+            logger.log('Using local Stockfish worker mode; skipping background connection');
+            return;
+        }
+
         if (this.port) return;
 
         try {
