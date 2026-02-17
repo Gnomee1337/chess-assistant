@@ -146,6 +146,25 @@ export class AnalysisService {
         );
     }
 
+    createBlobStockfishWorker(scriptPath, wasmPath) {
+        const scriptUrl = chrome.runtime.getURL(scriptPath);
+        const wasmUrl = chrome.runtime.getURL(wasmPath);
+        const wrapperSource = `importScripts(${JSON.stringify('${SCRIPT_URL}')});`;
+        const workerBlob = new Blob([wrapperSource.replace('${SCRIPT_URL}', scriptUrl)], { type: 'application/javascript' });
+        const workerBlobUrl = URL.createObjectURL(workerBlob);
+
+        try {
+            const workerUrlWithHash = `${workerBlobUrl}#${encodeURIComponent(wasmUrl)}`;
+            return {
+                worker: new Worker(workerUrlWithHash),
+                revoke: () => URL.revokeObjectURL(workerBlobUrl)
+            };
+        } catch (error) {
+            URL.revokeObjectURL(workerBlobUrl);
+            throw error;
+        }
+    }
+
     async ensureLocalEngineReady() {
         if (this.localEngineReady && this.localEngine) {
             return;
@@ -180,10 +199,12 @@ export class AnalysisService {
 
                 const [scriptPath, wasmPath] = workerPaths[index];
                 let worker;
+                let revokeWorkerUrl = null;
 
                 try {
-                    const workerUrl = `${chrome.runtime.getURL(scriptPath)}#${encodeURIComponent(chrome.runtime.getURL(wasmPath))}`;
-                    worker = new Worker(workerUrl);
+                    const created = this.createBlobStockfishWorker(scriptPath, wasmPath);
+                    worker = created.worker;
+                    revokeWorkerUrl = created.revoke;
                 } catch (error) {
                     startupErrors.push(`${scriptPath} + ${wasmPath}: ${error?.message || error}`);
                     tryPath(index + 1);
@@ -198,6 +219,10 @@ export class AnalysisService {
                     closed = true;
                     clearInterval(pingTimer);
                     clearTimeout(timeoutTimer);
+                    if (revokeWorkerUrl) {
+                        revokeWorkerUrl();
+                        revokeWorkerUrl = null;
+                    }
                 };
 
                 worker.onmessage = (event) => {
@@ -282,7 +307,6 @@ export class AnalysisService {
         if (this.analysisTimeoutId) {
             clearTimeout(this.analysisTimeoutId);
             this.analysisTimeoutId = null;
-        this.localEngineUnavailableReason = null;
         }
     }
 
