@@ -107,6 +107,7 @@ function initStockfish() {
 
                 if (typeof message === 'string' && message.includes('uciok')) {
                     stockfishReady = true;
+                    initAttempts = 0;
                     console.log('Background - ✅ READY!');
                 }
 
@@ -160,6 +161,32 @@ function initStockfish() {
             }
         }
     })();
+}
+
+function waitForStockfishReady(timeoutMs = 12000, pollIntervalMs = 100) {
+    if (stockfishReady && stockfish) {
+        return Promise.resolve();
+    }
+
+    if (!stockfish && !stockfishInitPromise) {
+        initStockfish();
+    }
+
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        const timer = setInterval(() => {
+            if (stockfishReady && stockfish) {
+                clearInterval(timer);
+                resolve();
+                return;
+            }
+
+            if (Date.now() - startTime >= timeoutMs) {
+                clearInterval(timer);
+                reject(new Error('stockfish-ready-timeout'));
+            }
+        }, pollIntervalMs);
+    });
 }
 
 // Validate FEN string format
@@ -245,28 +272,23 @@ chrome.runtime.onConnect.addListener(function (port) {
                 }
 
                 if (!stockfishReady) {
-                    console.log('Background - Not ready, waiting...');
-                    setTimeout(() => {
-                        if (stockfishReady && stockfish) {
-                            analyzePosition({
-                                fen: safeFen,
-                                depth: safeDepth
-                            });
-                        } else {
-                            console.error('Background - Timeout');
-                            safePostToPort(currentAnalysisPort, {
-                                type: 'stockfish-error',
-                                error: 'Stockfish not loaded. Reload the extension to restore local engine files.'
-                            });
-                        }
-                    }, 2000);
-                    return;
+                    console.log('Background - Not ready, waiting for Stockfish to finish initialization...');
                 }
 
-                analyzePosition({
-                    fen: safeFen,
-                    depth: safeDepth
-                });
+                waitForStockfishReady()
+                    .then(() => {
+                        analyzePosition({
+                            fen: safeFen,
+                            depth: safeDepth
+                        });
+                    })
+                    .catch(() => {
+                        console.error('Background - Timeout waiting for Stockfish');
+                        safePostToPort(currentAnalysisPort, {
+                            type: 'stockfish-error',
+                            error: 'Stockfish is still starting. Please try again in a moment.'
+                        });
+                    });
             } else if (msg && msg.type === 'reset-engine') {
                 // Allow manual engine reset
                 console.log('Background - Manual engine reset requested');
