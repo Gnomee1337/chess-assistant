@@ -14,6 +14,10 @@ const MAX_DEPTH = 25;
 export class AnalysisService {
     constructor() {
         this.port = null;
+        this.localEngine = null;
+        this.localEngineReady = false;
+        this.localEngineInitPromise = null;
+        this.useLocalEngine = false;
         this.isAnalyzing = false;
         this.depth = 15;
         this.lastFen = null;
@@ -51,6 +55,10 @@ export class AnalysisService {
      * @param {Object} msg - Message object
      */
     handleMessage(msg) {
+        if (this.useLocalEngine) {
+            return;
+        }
+
         if (msg.type === MESSAGE_TYPES.STOCKFISH_MESSAGE) {
             this.handleStockfishMessage(msg.data);
         } else if (msg.type === MESSAGE_TYPES.STOCKFISH_ERROR) {
@@ -75,10 +83,136 @@ export class AnalysisService {
      */
     handleError(error) {
         this.isAnalyzing = false;
+
+        if (this.shouldUseLocalEngineFallback(error) && !this.useLocalEngine) {
+            this.useLocalEngine = true;
+            logger.warn('Switching to local content-script Stockfish fallback');
+
+            this.ensureLocalEngineReady()
+                .then(() => {
+                    if (this.lastFen) {
+                        this.sendAnalyzeCommand(this.lastFen, this.normalizeDepth(this.depth));
+                    }
+                })
+                .catch((fallbackError) => {
+                    logger.error('Local fallback initialization failed:', fallbackError);
+                });
+        }
+
         if (this.onErrorCallback) {
             this.onErrorCallback(error);
         }
         logger.error('Analysis error:', error);
+    }
+
+    shouldUseLocalEngineFallback(error) {
+        const text = typeof error === 'string' ? error : '';
+        return text.includes('Stockfish files could not be loaded') || text.includes('engine is restarting');
+    }
+
+    async ensureLocalEngineReady() {
+        if (this.localEngineReady && this.localEngine) {
+            return;
+        }
+
+        if (this.localEngineInitPromise) {
+            return this.localEngineInitPromise;
+        }
+
+        const workerPaths = ['stockfish.js', 'stockfish/stockfish.js'];
+
+        this.localEngineInitPromise = new Promise((resolve, reject) => {
+            let resolved = false;
+            const workers = [];
+
+            const cleanupFailedWorkers = () => {
+                for (const worker of workers) {
+                    if (worker !== this.localEngine) {
+                        worker.terminate();
+                    }
+                }
+            };
+
+            for (const path of workerPaths) {
+                try {
+                    const worker = new Worker(chrome.runtime.getURL(path));
+                    workers.push(worker);
+
+                    worker.onmessage = (event) => {
+                        const message = event && event.data !== undefined ? event.data : event;
+                        if (typeof message === 'string' && (message.includes('uciok') || message.includes('readyok'))) {
+                            if (!resolved) {
+                                resolved = true;
+                                this.localEngine = worker;
+                                this.localEngineReady = true;
+                                cleanupFailedWorkers();
+                                resolve();
+                            }
+                        }
+
+                        if (worker === this.localEngine) {
+                            this.handleStockfishMessage(message);
+                            if (typeof message === 'string' && message.includes('bestmove')) {
+                                this.isAnalyzing = false;
+                            }
+                        }
+                    };
+
+                    worker.onerror = (engineError) => {
+                        if (worker === this.localEngine) {
+                            this.localEngineReady = false;
+                            this.localEngine = null;
+                        }
+
+                        if (!resolved && workers.length === workerPaths.length) {
+                            reject(engineError);
+                        }
+                    };
+
+                    worker.postMessage('uci');
+                    worker.postMessage('isready');
+                } catch (error) {
+                    // Try next path.
+                }
+            }
+
+            setTimeout(() => {
+                if (!resolved) {
+                    reject(new Error('Local Stockfish worker startup timeout'));
+                }
+            }, 10000);
+        }).finally(() => {
+            this.localEngineInitPromise = null;
+        });
+
+        return this.localEngineInitPromise;
+    }
+
+    sendAnalyzeCommand(fen, depth) {
+        if (this.useLocalEngine) {
+            if (!this.localEngine || !this.localEngineReady) {
+                this.handleError('Local Stockfish engine is not ready yet. Please try again.');
+                return;
+            }
+
+            this.localEngine.postMessage('stop');
+            this.localEngine.postMessage('ucinewgame');
+            this.localEngine.postMessage(`position fen ${fen}`);
+            this.localEngine.postMessage('setoption name MultiPV value 3');
+            this.localEngine.postMessage(`go depth ${depth}`);
+            return;
+        }
+
+        if (!this.port) {
+            this.handleError('Unable to connect to extension background process. Reload extension and page.');
+            return;
+        }
+
+        this.port.postMessage({
+            type: MESSAGE_TYPES.ANALYZE,
+            fen,
+            depth
+        });
     }
 
     /**
@@ -86,7 +220,7 @@ export class AnalysisService {
      * @returns {Promise<void>}
      */
     async analyze() {
-        if (!this.port) {
+        if (!this.port && !this.useLocalEngine) {
             this.connect();
             await this.delay(500);
         }
@@ -96,7 +230,7 @@ export class AnalysisService {
             return;
         }
 
-        if (!this.port) {
+        if (!this.port && !this.useLocalEngine) {
             this.handleError('Unable to connect to extension background process. Reload extension and page.');
             return;
         }
@@ -117,11 +251,11 @@ export class AnalysisService {
         this.isAnalyzing = true;
 
         try {
-            this.port.postMessage({
-                type: MESSAGE_TYPES.ANALYZE,
-                fen: fen,
-                depth: this.normalizeDepth(this.depth)
-            });
+            if (this.useLocalEngine) {
+                await this.ensureLocalEngineReady();
+            }
+
+            this.sendAnalyzeCommand(fen, this.normalizeDepth(this.depth));
         } catch (error) {
             this.handleError('Failed to start analysis. Reload extension and page.');
             logger.error('Failed to send analyze message:', error);
