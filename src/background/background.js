@@ -6,6 +6,7 @@ let stockfishReady = false;
 let initAttempts = 0;
 let isAnalyzing = false;
 let stockfishSource = 'local';
+let stockfishInitPromise = null;
 
 const CDN_STOCKFISH_ESM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.5/+esm';
 
@@ -14,6 +15,13 @@ const ANALYSIS_LIMITS = {
     MAX_DEPTH: 25,
     MAX_FEN_LENGTH: 128
 };
+
+const STOCKFISH_READY_TIMEOUT_MS = 12000;
+const STOCKFISH_READY_POLL_MS = 150;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function safePostToPort(port, payload) {
     if (!port) return;
@@ -67,106 +75,163 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-function createCdnStockfishWorker() {
-    const workerScript = `import Stockfish from '${CDN_STOCKFISH_ESM_URL}';\nconst engine = await Stockfish();\nself.onmessage = (event) => engine.postMessage(event.data);\nengine.onmessage = (event) => self.postMessage(event.data);`;
-    const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(workerBlob);
+function createLocalStockfishEngine() {
+    const stockfishScriptUrl = chrome.runtime.getURL('stockfish.js');
 
     try {
-        return new Worker(workerUrl, { type: 'module' });
-    } finally {
-        URL.revokeObjectURL(workerUrl);
+        // Preferred path: dedicated worker, where Stockfish's wasm loader is most reliable.
+        return new Worker(stockfishScriptUrl);
+    } catch (workerError) {
+        console.warn('Background - Dedicated Stockfish worker unavailable, trying in-service-worker fallback:', workerError);
     }
+
+    const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
+    const importScriptsFn =
+        typeof globalThis.importScripts === 'function'
+            ? globalThis.importScripts.bind(globalThis)
+            : null;
+
+    if (!importScriptsFn) {
+        throw new Error('importScripts is unavailable in this service worker context');
+    }
+
+    if (typeof globalThis.STOCKFISH !== 'function') {
+        importScriptsFn(stockfishScriptUrl);
+    }
+
+    if (typeof globalThis.STOCKFISH !== 'function') {
+        throw new Error('STOCKFISH factory unavailable after importScripts');
+    }
+
+    return globalThis.STOCKFISH(wasmUrl);
+}
+
+async function createCdnStockfishEngine() {
+    const stockfishModule = await import(CDN_STOCKFISH_ESM_URL);
+    const stockfishFactory = stockfishModule?.default;
+
+    if (typeof stockfishFactory !== 'function') {
+        throw new Error('CDN Stockfish module did not expose a default factory function');
+    }
+
+    return stockfishFactory();
+}
+
+
+async function waitForStockfishReady(timeoutMs = STOCKFISH_READY_TIMEOUT_MS) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+        if (stockfishReady && stockfish) {
+            return true;
+        }
+
+        if (!stockfish && !stockfishInitPromise) {
+            return false;
+        }
+
+        await delay(STOCKFISH_READY_POLL_MS);
+    }
+
+    return false;
 }
 
 function initStockfish(preferredSource = stockfishSource) {
-    if (stockfish || initAttempts > 3) return;
+    if (stockfish || stockfishInitPromise || initAttempts > 3) return;
 
-    initAttempts++;
-    console.log('Background - Init attempt:', initAttempts);
+    stockfishInitPromise = (async () => {
+        initAttempts++;
+        console.log('Background - Init attempt:', initAttempts);
 
-    try {
-        if (preferredSource === 'cdn') {
-            console.log('Background - Loading Stockfish from CDN fallback');
-            stockfish = createCdnStockfishWorker();
-            stockfishSource = 'cdn';
-        } else {
-            const stockfishUrl = chrome.runtime.getURL('stockfish.js');
-            console.log('Background - Loading:', stockfishUrl);
-            stockfish = new Worker(stockfishUrl);
-            stockfishSource = 'local';
-        }
-
-        stockfish.onmessage = function (event) {
-            const message = event.data;
-            console.log('Stockfish:', message);
-
-            if (message.includes('uciok')) {
-                stockfishReady = true;
-                console.log('Background - ✅ READY!');
+        try {
+            if (preferredSource === 'cdn') {
+                console.log('Background - Loading Stockfish from CDN fallback');
+                stockfish = await createCdnStockfishEngine();
+                stockfishSource = 'cdn';
+            } else {
+                console.log('Background - Loading local Stockfish bundle');
+                stockfish = createLocalStockfishEngine();
+                stockfishSource = 'local';
             }
 
-            if (message.includes('bestmove')) {
-                isAnalyzing = false;
+            stockfish.onmessage = function (event) {
+                const message = event && event.data !== undefined ? event.data : event;
+                console.log('Stockfish:', message);
+
+                if (typeof message === 'string' && message.includes('uciok')) {
+                    stockfishReady = true;
+                    console.log('Background - ✅ READY!');
+                }
+
+                if (typeof message === 'string' && message.includes('bestmove')) {
+                    isAnalyzing = false;
+                }
+
+                if (currentAnalysisPort) {
+                    currentAnalysisPort.postMessage({
+                        type: 'stockfish-message',
+                        data: message
+                    });
+                }
+            };
+
+            if ('onerror' in stockfish) {
+                stockfish.onerror = function (error) {
+                    console.error('Background - Stockfish Error:', error);
+
+                    const shouldTryCdnFallback = stockfishSource === 'local';
+
+                    if (currentAnalysisPort) {
+                        currentAnalysisPort.postMessage({
+                            type: 'stockfish-error',
+                            error: 'Stockfish engine crashed. Restarting...'
+                        });
+                    }
+
+                    stockfish = null;
+                    stockfishReady = false;
+                    isAnalyzing = false;
+                    stockfishInitPromise = null;
+
+                    if (shouldTryCdnFallback) {
+                        console.warn('Background - Local Stockfish failed. Falling back to CDN.');
+                        stockfishSource = 'cdn';
+                        initAttempts = 0;
+                    }
+
+                    setTimeout(() => {
+                        if (initAttempts < 3) {
+                            console.log('Background - Attempting to restart Stockfish...');
+                            initStockfish(stockfishSource);
+                        }
+                    }, 1000);
+                };
             }
 
-            if (currentAnalysisPort) {
-                currentAnalysisPort.postMessage({
-                    type: 'stockfish-message',
-                    data: message
-                });
-            }
-        };
+            stockfish.postMessage('uci');
 
-        stockfish.onerror = function (error) {
-            console.error('Background - Stockfish Error:', error);
-
-            const shouldTryCdnFallback = stockfishSource === 'local';
-
-            // Send error to content script
-            if (currentAnalysisPort) {
-                currentAnalysisPort.postMessage({
-                    type: 'stockfish-error',
-                    error: 'Stockfish engine crashed. Restarting...'
-                });
-            }
-
-            // Reset and try to reinitialize
+        } catch (error) {
+            console.error('Background - Init failed:', error);
             stockfish = null;
             stockfishReady = false;
-            isAnalyzing = false;
 
-            if (shouldTryCdnFallback) {
-                console.warn('Background - Local Stockfish failed. Falling back to CDN.');
+            initAttempts = 0;
+
+            if (preferredSource === 'local') {
+                console.warn('Background - Local Stockfish missing/unavailable. Trying CDN fallback.');
                 stockfishSource = 'cdn';
-                initAttempts = 0;
+                stockfishInitPromise = null;
+                initStockfish('cdn');
+                return;
             }
 
-            // Try to reinitialize after a delay
-            setTimeout(() => {
-                if (initAttempts < 3) {
-                    console.log('Background - Attempting to restart Stockfish...');
-                    initStockfish(stockfishSource);
-                }
-            }, 1000);
-        };
-
-        stockfish.postMessage('uci');
-
-    } catch (error) {
-        console.error('Background - Init failed:', error);
-        stockfish = null;
-
-        if (preferredSource === 'local') {
-            console.warn('Background - Local Stockfish missing/unavailable. Trying CDN fallback.');
-            stockfishSource = 'cdn';
-            initAttempts = 0;
-            initStockfish('cdn');
-            return;
+            stockfishInitPromise = null;
+        } finally {
+            if (stockfish) {
+                stockfishInitPromise = null;
+            }
         }
-
-        initAttempts = 0;
-    }
+    })();
 }
 
 // Validate FEN string format
@@ -252,21 +317,24 @@ chrome.runtime.onConnect.addListener(function (port) {
                 }
 
                 if (!stockfishReady) {
-                    console.log('Background - Not ready, waiting...');
-                    setTimeout(() => {
-                        if (stockfishReady && stockfish) {
+                    console.log('Background - Not ready, waiting for engine initialization...');
+                    initStockfish();
+
+                    waitForStockfishReady().then((isReady) => {
+                        if (isReady) {
                             analyzePosition({
                                 fen: safeFen,
                                 depth: safeDepth
                             });
-                        } else {
-                            console.error('Background - Timeout');
-                            safePostToPort(currentAnalysisPort, {
-                                type: 'stockfish-error',
-                                error: 'Stockfish not loaded (local + CDN fallback failed). Ensure local engine files exist or allow access to cdn.jsdelivr.net.'
-                            });
+                            return;
                         }
-                    }, 2000);
+
+                        console.error('Background - Timeout waiting for Stockfish readiness');
+                        safePostToPort(currentAnalysisPort, {
+                            type: 'stockfish-error',
+                            error: 'Stockfish not loaded (local + CDN fallback failed). Ensure local engine files exist in dist/ or disable network blockers for cdn.jsdelivr.net.'
+                        });
+                    });
                     return;
                 }
 
@@ -277,13 +345,14 @@ chrome.runtime.onConnect.addListener(function (port) {
             } else if (msg && msg.type === 'reset-engine') {
                 // Allow manual engine reset
                 console.log('Background - Manual engine reset requested');
-                if (stockfish) {
+                if (stockfish && typeof stockfish.terminate === 'function') {
                     stockfish.terminate();
                 }
                 stockfish = null;
                 stockfishReady = false;
                 isAnalyzing = false;
                 initAttempts = 0;
+                stockfishInitPromise = null;
                 initStockfish();
             }
         });
