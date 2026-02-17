@@ -68,73 +68,37 @@ function isValidAnalyzeMessage(msg) {
     return true;
 }
 
-async function resolveFirstAvailableAsset(paths) {
-    for (const path of paths) {
-        const url = chrome.runtime.getURL(path);
+function createWorkerStockfishEngine(paths) {
+    const workerErrors = [];
 
-        try {
-            const response = await fetch(url, { cache: 'no-store' });
-            if (response.ok) {
-                return { path, url };
-            }
-        } catch (error) {
-            // Continue trying alternate paths.
-        }
+    if (typeof Worker !== 'function') {
+        throw new Error('Worker API is unavailable in this service worker context');
     }
-
-    throw new Error(`Asset not found in extension package. Tried: ${paths.join(', ')}`);
-}
-
-function importStockfishFactory(paths) {
-    const importScriptsFn =
-        typeof globalThis.importScripts === 'function'
-            ? globalThis.importScripts.bind(globalThis)
-            : null;
-
-    if (!importScriptsFn) {
-        throw new Error('importScripts is unavailable in this service worker context');
-    }
-
-    const importErrors = [];
 
     for (const path of paths) {
         const url = chrome.runtime.getURL(path);
 
         try {
-            importScriptsFn(url);
-            if (typeof globalThis.STOCKFISH === 'function') {
-                return { path, url };
-            }
-
-            importErrors.push(`${path}: STOCKFISH factory unavailable after import`);
+            const worker = new Worker(url);
+            return { worker, path, url };
         } catch (error) {
-            importErrors.push(`${path}: ${error?.message || error}`);
+            workerErrors.push(`${path}: ${error?.message || error}`);
         }
     }
 
-    throw new Error(`Failed to import Stockfish script. Tried: ${importErrors.join(' | ')}`);
+    throw new Error(`Failed to create Stockfish worker. Tried: ${workerErrors.join(' | ')}`);
 }
 
 async function createLocalStockfishEngine() {
-    const stockfishScript = importStockfishFactory([
+    const stockfishScriptPaths = [
         'stockfish.js',
         'stockfish/stockfish.js',
         'public/stockfish/stockfish.js'
-    ]);
+    ];
 
-    const wasmAsset = await resolveFirstAvailableAsset([
-        'stockfish.wasm',
-        'stockfish/stockfish.wasm',
-        'public/stockfish/stockfish.wasm'
-    ]);
-
-    console.log('Background - Using Stockfish assets:', stockfishScript.path, wasmAsset.path);
-
-    if (typeof globalThis.STOCKFISH !== 'function') {
-        throw new Error('STOCKFISH factory unavailable after importScripts');
-    }
-
-    return globalThis.STOCKFISH(wasmAsset.url);
+    const workerEngine = createWorkerStockfishEngine(stockfishScriptPaths);
+    console.log('Background - Using Stockfish worker script:', workerEngine.path);
+    return workerEngine.worker;
 }
 
 function initStockfish() {
@@ -354,7 +318,7 @@ chrome.runtime.onConnect.addListener(function (port) {
 
                         const isAssetError =
                             typeof errorMessage === 'string' &&
-                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script'));
+                            (errorMessage.includes('Asset not found') || errorMessage.includes('Failed to import Stockfish script') || errorMessage.includes('Failed to create Stockfish worker'));
 
                         safePostToPort(currentAnalysisPort, {
                             type: 'stockfish-error',
