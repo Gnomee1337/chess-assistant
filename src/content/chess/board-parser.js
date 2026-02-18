@@ -150,7 +150,32 @@ export class BoardParser {
             };
         }
 
+        const attrSquare = this.parseLichessSquareFromAttributes(piece);
+        if (attrSquare) {
+            return {
+                char: pieceChar,
+                file: attrSquare.file,
+                rank: attrSquare.rank
+            };
+        }
+
         return this.parseLichessPieceElement(piece, pieceChar);
+    }
+
+    static parseLichessSquareFromAttributes(element) {
+        const square = element.getAttribute('cgKey')
+            || element.getAttribute('cgkey')
+            || element.getAttribute('data-key')
+            || element.getAttribute('key')
+            || '';
+
+        if (!/^[a-h][1-8]$/.test(square)) return null;
+
+        const file = square.charCodeAt(0) - 97;
+        const rank = parseInt(square[1], 10) - 1;
+        if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
+
+        return { file, rank };
     }
 
     static parseLichessPieceElement(piece, pieceChar) {
@@ -276,11 +301,6 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
-        const lichessMoveListTurn = this.determineTurnFromLichessMoveList();
-        if (lichessMoveListTurn) {
-            return lichessMoveListTurn;
-        }
-
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
             return turnFromHighlights;
@@ -289,6 +309,14 @@ export class BoardParser {
         const lichessTurn = this.determineTurnFromLichessClock();
         if (lichessTurn) {
             return lichessTurn;
+        }
+
+        // Move-list parsing can be stale on Lichess when a non-latest ply is selected
+        // or when the currently-highlighted token is not the actual last played move.
+        // Keep this as a fallback behind visual board/clock signals.
+        const lichessMoveListTurn = this.determineTurnFromLichessMoveList();
+        if (lichessMoveListTurn) {
+            return lichessMoveListTurn;
         }
 
         try {
@@ -439,6 +467,9 @@ export class BoardParser {
     }
 
     static parseLichessSquarePosition(squareElement) {
+        const attrSquare = this.parseLichessSquareFromAttributes(squareElement);
+        if (attrSquare) return attrSquare;
+
         const boardElement = squareElement.closest('cg-board');
         if (!boardElement) return null;
 

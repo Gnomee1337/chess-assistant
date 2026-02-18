@@ -27,6 +27,7 @@ export class AnalysisService {
         this.onLoadingCallback = null;
         this.reconnectAttempts = 0;
         this.reconnectTimer = null;
+        this.onAnalyzeStartCallback = null;
     }
 
     // ── Connection ────────────────────────────────────────────────────────────
@@ -142,6 +143,10 @@ export class AnalysisService {
         this.lastFen = fen;
         this.isAnalyzing = true;
 
+        if (this.onAnalyzeStartCallback) {
+            this.onAnalyzeStartCallback(fen);
+        }
+
         try {
             this.port.postMessage({
                 type: MESSAGE_TYPES.ANALYZE,
@@ -170,6 +175,7 @@ export class AnalysisService {
     onMove(callback) { this.onMoveCallback = callback; }
     onError(callback) { this.onErrorCallback = callback; }
     onLoading(callback) { this.onLoadingCallback = callback; }
+    onAnalyzeStart(callback) { this.onAnalyzeStartCallback = callback; }
 
     setAnalyzing(state) { this.isAnalyzing = state; }
 

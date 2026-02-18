@@ -124,6 +124,11 @@ class ChessAssistant {
             this.handleStockfishMessage(message);
         });
 
+        this.analysisService.onAnalyzeStart(() => {
+            this.topMoves = [];
+            MoveHighlighter.clearAll();
+        });
+
         this.analysisService.onError((error) => {
             this.overlay.showError(error);
         });
@@ -143,6 +148,7 @@ class ChessAssistant {
     }
 
     parseMultiPVInfo(message) {
+        if (!this.analysisService.isAnalyzing) return;
         const depthMatch = message.match(/depth (\d+)/);
         const multipvMatch = message.match(/multipv (\d+)/);
         const scoreMatch = message.match(/score cp (-?\d+)/);

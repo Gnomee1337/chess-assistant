@@ -3,6 +3,7 @@
  */
 
 import { Logger } from '../../shared/logger.js';
+import { SELECTORS } from '../../shared/constants.js';
 import { MoveHighlighter } from '../chess/move-highlighter.js';
 
 const logger = new Logger('Overlay');
@@ -321,12 +322,16 @@ export class Overlay {
         const medals = ['🥇', '🥈', '🥉'];
         let html = '';
 
+        const board = document.querySelector(SELECTORS.BOARD);
+        const isFlipped = board ? MoveHighlighter.isBoardFlipped(board) : false;
+
         moves.forEach((moveData, index) => {
             const scoreStr = this.formatScore(moveData);
+            const displayMove = this.getDisplayMove(moveData.move, isFlipped);
             html += `
-                <div class="move-item" data-move="${moveData.move}">
+                <div class="move-item" data-move="${moveData.move}" title="UCI: ${moveData.move}">
                     <span class="medal">${medals[index]}</span>
-                    <span class="move">${moveData.move}</span>
+                    <span class="move">${displayMove}</span>
                     <span class="score">${scoreStr}</span>
                 </div>
             `;
@@ -344,6 +349,28 @@ export class Overlay {
                 MoveHighlighter.clearAll();
             });
         });
+    }
+
+    getDisplayMove(uciMove, isFlipped) {
+        if (!isFlipped) return uciMove;
+
+        const match = String(uciMove).match(/^([a-h][1-8])([a-h][1-8])([a-z])?$/);
+        if (!match) return uciMove;
+
+        const from = this.mirrorSquare(match[1]);
+        const to = this.mirrorSquare(match[2]);
+        const promotion = match[3] || '';
+        return `${from}${to}${promotion}`;
+    }
+
+    mirrorSquare(square) {
+        const fileCode = square.charCodeAt(0) - 96;
+        const rank = Number.parseInt(square[1], 10);
+        if (!Number.isFinite(fileCode) || !Number.isFinite(rank)) return square;
+
+        const mirroredFile = String.fromCharCode(96 + (9 - fileCode));
+        const mirroredRank = String(9 - rank);
+        return `${mirroredFile}${mirroredRank}`;
     }
 
     formatScore(moveData) {
