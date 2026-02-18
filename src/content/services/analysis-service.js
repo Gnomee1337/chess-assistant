@@ -17,6 +17,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 1000;
 const RETRY_AFTER_RECONNECT_MS = 250;
 const ANALYSIS_TIMEOUT_MS = 30000;
+const ENGINE_LOADING_TIMEOUT_MS = 180000;
+const MAX_TIMEOUT_RECOVERY_ATTEMPTS = 1;
 
 export class AnalysisService {
     constructor() {
@@ -32,6 +34,8 @@ export class AnalysisService {
         this.onAnalyzeStartCallback = null;
         this.analysisTimeout = null;
         this.pendingRetryFen = null;
+        this.waitingForEngine = false;
+        this.timeoutRecoveryAttempts = 0;
     }
 
     // ── Connection ────────────────────────────────────────────────────────────
@@ -93,6 +97,7 @@ export class AnalysisService {
 
         const fen = this.pendingRetryFen;
         this.pendingRetryFen = null;
+        this.waitingForEngine = false;
 
         setTimeout(() => {
             if (!this.port) {
@@ -131,11 +136,15 @@ export class AnalysisService {
     handleStockfishMessage(message) {
         // The background sends this status string while the WASM is still loading.
         if (typeof message === 'string' && message.includes('Engine loading')) {
+            this.waitingForEngine = true;
+            this.startAnalysisTimeout();
             if (this.onLoadingCallback) {
                 this.onLoadingCallback('Engine loading, please wait...');
             }
             return;
         }
+
+        this.waitingForEngine = false;
 
         if (this.onMoveCallback) {
             this.onMoveCallback(message);
@@ -149,6 +158,7 @@ export class AnalysisService {
     handleError(error) {
         this.resetAnalyzingState();
         this.pendingRetryFen = null;
+        this.waitingForEngine = false;
         if (this.onErrorCallback) {
             this.onErrorCallback(error);
         }
@@ -180,6 +190,7 @@ export class AnalysisService {
             return;
         }
 
+        this.timeoutRecoveryAttempts = 0;
         logger.log('Analyzing position:', fen);
         const sent = this.sendAnalyzeRequest(fen);
         if (!sent) {
@@ -194,6 +205,7 @@ export class AnalysisService {
     sendAnalyzeRequest(fen, triggerStartCallback = true) {
         this.lastFen = fen;
         this.isAnalyzing = true;
+        this.waitingForEngine = false;
         this.startAnalysisTimeout();
 
         if (triggerStartCallback && this.onAnalyzeStartCallback) {
@@ -241,11 +253,48 @@ export class AnalysisService {
 
     startAnalysisTimeout() {
         this.clearAnalysisTimeout();
+        const timeoutMs = this.waitingForEngine ? ENGINE_LOADING_TIMEOUT_MS : ANALYSIS_TIMEOUT_MS;
         this.analysisTimeout = setTimeout(() => {
             if (!this.isAnalyzing) return;
+            if (this.waitingForEngine) {
+                logger.warn('Engine loading timed out');
+                this.handleError('Engine is taking too long to load. Please try again.');
+                return;
+            }
+
+            if (this.timeoutRecoveryAttempts < MAX_TIMEOUT_RECOVERY_ATTEMPTS && this.lastFen) {
+                this.timeoutRecoveryAttempts++;
+                logger.warn('Analysis timed out, attempting engine reset/retry');
+                this.recoverFromTimeout();
+                return;
+            }
+
             logger.warn('Analysis timed out');
             this.handleError('Analysis timed out. Please try again.');
-        }, ANALYSIS_TIMEOUT_MS);
+        }, timeoutMs);
+    }
+
+
+    recoverFromTimeout() {
+        const fenToRetry = this.lastFen;
+        this.resetAnalyzingState();
+        this.pendingRetryFen = fenToRetry;
+
+        if (this.onErrorCallback) {
+            this.onErrorCallback('Analysis stalled. Resetting engine and retrying...');
+        }
+
+        if (this.port) {
+            try {
+                this.port.postMessage({ type: MESSAGE_TYPES.RESET_ENGINE });
+            } catch (error) {
+                logger.warn('Could not send reset-engine command:', error);
+                this.port = null;
+            }
+        }
+
+        this.scheduleReconnect();
+        this.retryPendingAnalysis();
     }
 
     clearAnalysisTimeout() {
@@ -256,6 +305,7 @@ export class AnalysisService {
 
     resetAnalyzingState() {
         this.isAnalyzing = false;
+        this.waitingForEngine = false;
         this.clearAnalysisTimeout();
     }
 
