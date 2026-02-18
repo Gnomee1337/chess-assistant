@@ -15,6 +15,7 @@ const MIN_DEPTH = 5;
 const MAX_DEPTH = 25;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 1000;
+const ANALYSIS_TIMEOUT_MS = 30000;
 
 export class AnalysisService {
     constructor() {
@@ -28,6 +29,8 @@ export class AnalysisService {
         this.reconnectAttempts = 0;
         this.reconnectTimer = null;
         this.onAnalyzeStartCallback = null;
+        this.analysisTimeout = null;
+        this.pendingRetryFen = null;
     }
 
     // ── Connection ────────────────────────────────────────────────────────────
@@ -43,8 +46,17 @@ export class AnalysisService {
             this.port.onDisconnect.addListener(() => {
                 const err = chrome.runtime.lastError; // must be read to suppress noise
                 logger.warn('Disconnected from background:', err?.message || '(no reason)');
+                const hadInFlightAnalysis = this.isAnalyzing;
                 this.port = null;
-                this.isAnalyzing = false;
+                this.resetAnalyzingState();
+
+                if (hadInFlightAnalysis && this.lastFen) {
+                    this.pendingRetryFen = this.lastFen;
+                    if (this.onErrorCallback) {
+                        this.onErrorCallback('Connection lost. Reconnecting and retrying analysis...');
+                    }
+                }
+
                 this.scheduleReconnect();
             });
 
@@ -71,6 +83,12 @@ export class AnalysisService {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connect();
+
+            if (this.port && this.pendingRetryFen) {
+                const fen = this.pendingRetryFen;
+                this.pendingRetryFen = null;
+                this.analyzeFen(fen);
+            }
         }, delay);
     }
 
@@ -104,10 +122,15 @@ export class AnalysisService {
         if (this.onMoveCallback) {
             this.onMoveCallback(message);
         }
+
+        if (typeof message === 'string' && message.includes('bestmove')) {
+            this.resetAnalyzingState();
+        }
     }
 
     handleError(error) {
-        this.isAnalyzing = false;
+        this.resetAnalyzingState();
+        this.pendingRetryFen = null;
         if (this.onErrorCallback) {
             this.onErrorCallback(error);
         }
@@ -140,8 +163,13 @@ export class AnalysisService {
         }
 
         logger.log('Analyzing position:', fen);
+        this.analyzeFen(fen);
+    }
+
+    analyzeFen(fen) {
         this.lastFen = fen;
         this.isAnalyzing = true;
+        this.startAnalysisTimeout();
 
         if (this.onAnalyzeStartCallback) {
             this.onAnalyzeStartCallback(fen);
@@ -155,7 +183,6 @@ export class AnalysisService {
             });
         } catch (e) {
             logger.error('postMessage failed:', e);
-            this.isAnalyzing = false;
             this.port = null;
             this.handleError('Lost connection to background. Retrying...');
             this.scheduleReconnect();
@@ -177,7 +204,34 @@ export class AnalysisService {
     onLoading(callback) { this.onLoadingCallback = callback; }
     onAnalyzeStart(callback) { this.onAnalyzeStartCallback = callback; }
 
-    setAnalyzing(state) { this.isAnalyzing = state; }
+    setAnalyzing(state) {
+        this.isAnalyzing = state;
+        if (state) {
+            this.startAnalysisTimeout();
+            return;
+        }
+        this.clearAnalysisTimeout();
+    }
+
+    startAnalysisTimeout() {
+        this.clearAnalysisTimeout();
+        this.analysisTimeout = setTimeout(() => {
+            if (!this.isAnalyzing) return;
+            logger.warn('Analysis timed out');
+            this.handleError('Analysis timed out. Please try again.');
+        }, ANALYSIS_TIMEOUT_MS);
+    }
+
+    clearAnalysisTimeout() {
+        if (!this.analysisTimeout) return;
+        clearTimeout(this.analysisTimeout);
+        this.analysisTimeout = null;
+    }
+
+    resetAnalyzingState() {
+        this.isAnalyzing = false;
+        this.clearAnalysisTimeout();
+    }
 
     delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 }
