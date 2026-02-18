@@ -161,19 +161,23 @@ class ChessAssistant {
         const multipv = parseInt(multipvMatch[1], 10);
         const move = moveMatch[1];
 
-        if (depth === this.analysisService.depth) {
-            let score, mateIn;
+        let score, mateIn;
 
-            if (mateMatch) {
-                mateIn = parseInt(mateMatch[1], 10);
-                score = mateIn > 0 ? 1000 : -1000;
-            } else if (scoreMatch) {
-                score = parseInt(scoreMatch[1], 10) / 100.0;
-            } else {
-                return;
-            }
+        if (mateMatch) {
+            mateIn = parseInt(mateMatch[1], 10);
+            score = mateIn > 0 ? 1000 : -1000;
+        } else if (scoreMatch) {
+            score = parseInt(scoreMatch[1], 10) / 100.0;
+        } else {
+            return;
+        }
 
-            this.topMoves[multipv - 1] = { move, score, multipv, mateIn };
+        // Always keep the deepest result seen per multipv slot so that if the engine
+        // finishes before the target depth (forced mate, early bestmove, etc.)
+        // we still have something to display.
+        const existing = this.topMoves[multipv - 1];
+        if (!existing || depth >= (existing.depth || 0)) {
+            this.topMoves[multipv - 1] = { move, score, multipv, mateIn, depth };
         }
     }
 

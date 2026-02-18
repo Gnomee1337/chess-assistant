@@ -78,8 +78,16 @@ export class MoveHighlighter {
     static isBoardFlipped(board) {
         const classNames = `${board.className || ''} ${board.parentElement?.className || ''}`.toLowerCase();
         const orientation = (board.getAttribute('orientation') || '').toLowerCase();
+        // Lichess stores orientation on cg-wrap which is an ancestor of cg-board
+        const cgWrap = (typeof board.closest === 'function')
+            ? board.closest('.cg-wrap')
+            : null;
+        const cgWrapClass = (cgWrap?.className || '').toLowerCase();
 
-        return classNames.includes('flipped') || classNames.includes('black') || orientation === 'black';
+        return classNames.includes('flipped')
+            || classNames.includes('black')
+            || orientation === 'black'
+            || cgWrapClass.includes('orientation-black');
     }
 
     static getOverlayRoot(boardState) {

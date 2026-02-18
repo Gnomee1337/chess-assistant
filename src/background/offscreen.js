@@ -1,17 +1,40 @@
-// Offscreen document script — Chess Assistant
-//
-// Runs in a normal browser extension page (not a service worker),
-// so new Worker() is fully available here.
-//
-// Message protocol with the service worker:
-//   SW → offscreen : { type: 'stockfish-command', command: '<UCI string>' }
-//   offscreen → SW : { type: 'offscreen-output',  data:    '<Stockfish output>' }
-//   offscreen → SW : { type: 'offscreen-error',   error:   '<message>' }
-
 'use strict';
 
 let stockfishWorker = null;
 let engineReady = false;
+let bgPort = null;
+
+// ─── Port to background (more reliable than sendMessage for streaming) ────────
+
+function getPort() {
+    if (bgPort) return bgPort;
+    try {
+        bgPort = chrome.runtime.connect({ name: 'offscreen' });
+        bgPort.onDisconnect.addListener(() => {
+            console.warn('Offscreen - Port to background disconnected');
+            bgPort = null;
+        });
+    } catch (e) {
+        console.error('Offscreen - Could not connect port to background:', e);
+        bgPort = null;
+    }
+    return bgPort;
+}
+
+function sendToBackground(payload) {
+    const port = getPort();
+    if (port) {
+        try {
+            port.postMessage(payload);
+            return;
+        } catch (e) {
+            console.warn('Offscreen - Port postMessage failed, falling back to sendMessage:', e);
+            bgPort = null;
+        }
+    }
+    // Fallback
+    chrome.runtime.sendMessage(payload).catch(() => { });
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -24,7 +47,7 @@ function initStockfish() {
         stockfishWorker = new Worker(chrome.runtime.getURL('stockfish.js'));
     } catch (e) {
         console.error('Offscreen - Worker() failed:', e);
-        notifyError('Failed to create Stockfish Worker: ' + e.message);
+        sendToBackground({ type: 'offscreen-error', error: 'Failed to create Stockfish Worker: ' + e.message });
         return;
     }
 
@@ -37,29 +60,19 @@ function initStockfish() {
             console.log('Offscreen - ✅ Stockfish READY');
         }
 
-        // Forward every engine line to the service worker.
-        chrome.runtime.sendMessage({ type: 'offscreen-output', data: msg })
-            .catch(() => {
-                // Service worker may have gone to sleep momentarily — safe to ignore.
-            });
+        sendToBackground({ type: 'offscreen-output', data: msg });
     };
 
     stockfishWorker.onerror = function (err) {
         console.error('Offscreen - Worker error:', err);
         engineReady = false;
-        notifyError(err.message || 'Unknown Stockfish Worker error');
+        sendToBackground({ type: 'offscreen-error', error: err.message || 'Unknown Stockfish Worker error' });
 
-        // Try to restart once.
         stockfishWorker = null;
         setTimeout(initStockfish, 1000);
     };
 
     stockfishWorker.postMessage('uci');
-}
-
-function notifyError(message) {
-    chrome.runtime.sendMessage({ type: 'offscreen-error', error: message })
-        .catch(() => { });
 }
 
 // ─── Message handler (commands from service worker) ───────────────────────────
@@ -71,16 +84,17 @@ chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
         if (stockfishWorker) {
             stockfishWorker.postMessage(msg.command);
         } else {
-            notifyError('Worker not available — command dropped: ' + msg.command);
+            sendToBackground({ type: 'offscreen-error', error: 'Worker not available — command dropped: ' + msg.command });
         }
 
         sendResponse({ ok: true });
         return false;
     }
 
-    // Service worker checking whether the engine is already ready
-    // (happens after a SW restart when the offscreen doc survived).
     if (msg.type === 'stockfish-status-request') {
+        // Reconnect the output port to the freshly-restarted SW while we're here.
+        bgPort = null;
+        getPort();
         sendResponse({ ready: engineReady });
         return false;
     }

@@ -322,12 +322,9 @@ export class Overlay {
         const medals = ['🥇', '🥈', '🥉'];
         let html = '';
 
-        const board = document.querySelector(SELECTORS.BOARD);
-        const isFlipped = board ? MoveHighlighter.isBoardFlipped(board) : false;
-
         moves.forEach((moveData, index) => {
             const scoreStr = this.formatScore(moveData);
-            const displayMove = this.getDisplayMove(moveData.move, isFlipped);
+            const displayMove = this.getDisplayMove(moveData.move);
             html += `
                 <div class="move-item" data-move="${moveData.move}" title="UCI: ${moveData.move}">
                     <span class="medal">${medals[index]}</span>
@@ -351,16 +348,8 @@ export class Overlay {
         });
     }
 
-    getDisplayMove(uciMove, isFlipped) {
-        if (!isFlipped) return uciMove;
-
-        const match = String(uciMove).match(/^([a-h][1-8])([a-h][1-8])([a-z])?$/);
-        if (!match) return uciMove;
-
-        const from = this.mirrorSquare(match[1]);
-        const to = this.mirrorSquare(match[2]);
-        const promotion = match[3] || '';
-        return `${from}${to}${promotion}`;
+    getDisplayMove(uciMove) {
+        return uciMove;
     }
 
     mirrorSquare(square) {

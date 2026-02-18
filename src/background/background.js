@@ -98,45 +98,25 @@ chrome.runtime.onMessage.addListener(function (msg, sender) {
     if (sender.id !== chrome.runtime.id) return;
     // Ignore messages from content scripts (they use the port instead).
     if (sender.tab) return;
-
-    if (msg.type === 'offscreen-output') {
-        const message = msg.data;
-        console.log('Stockfish:', message);
-
-        if (typeof message === 'string' && message.includes('uciok')) {
-            stockfishReady = true;
-            console.log('Background - ✅ Stockfish READY');
-
-            // Drain any request queued while the WASM was loading.
-            if (pendingAnalysis) {
-                const queued = pendingAnalysis;
-                pendingAnalysis = null;
-                console.log('Background - Running queued analysis');
-                runAnalysis(queued);
-            }
-        }
-
-        if (typeof message === 'string' && message.includes('bestmove')) {
-            isAnalyzing = false;
-        }
-
-        safePostToPort(currentAnalysisPort, { type: 'stockfish-message', data: message });
-
-    } else if (msg.type === 'offscreen-error') {
-        console.error('Background - Offscreen Stockfish error:', msg.error);
-        stockfishReady = false;
-        isAnalyzing = false;
-
-        safePostToPort(currentAnalysisPort, {
-            type: 'stockfish-error',
-            error: msg.error
-        });
-    }
+    // Fallback for browsers/scenarios where the port isn't used
+    handleOffscreenMsg(msg);
 });
 
 // ─── Port connection from content script ─────────────────────────────────────
 
 chrome.runtime.onConnect.addListener(function (port) {
+    // ── Offscreen document output port ──────────────────────────────────────
+    if (port.name === 'offscreen') {
+        port.onMessage.addListener(function (msg) {
+            handleOffscreenMsg(msg);
+        });
+        port.onDisconnect.addListener(function () {
+            console.warn('Background - Offscreen output port disconnected');
+        });
+        return;
+    }
+
+    // ── Content script port ─────────────────────────────────────────────────
     if (port.name !== 'chess-assistant') return;
 
     if (!isTrustedPort(port)) {
@@ -259,6 +239,35 @@ function normalizeDepth(depth) {
     const n = Number.parseInt(depth, 10);
     if (!Number.isFinite(n)) return ANALYSIS_LIMITS.MIN_DEPTH;
     return Math.min(ANALYSIS_LIMITS.MAX_DEPTH, Math.max(ANALYSIS_LIMITS.MIN_DEPTH, n));
+}
+
+function handleOffscreenMsg(msg) {
+    if (msg.type === 'offscreen-output') {
+        const message = msg.data;
+        console.log('Stockfish:', message);
+
+        if (typeof message === 'string' && message.includes('uciok')) {
+            stockfishReady = true;
+            console.log('Background - ✅ Stockfish READY');
+            if (pendingAnalysis) {
+                const queued = pendingAnalysis;
+                pendingAnalysis = null;
+                runAnalysis(queued);
+            }
+        }
+
+        if (typeof message === 'string' && message.includes('bestmove')) {
+            isAnalyzing = false;
+        }
+
+        safePostToPort(currentAnalysisPort, { type: 'stockfish-message', data: message });
+
+    } else if (msg.type === 'offscreen-error') {
+        console.error('Background - Offscreen Stockfish error:', msg.error);
+        stockfishReady = false;
+        isAnalyzing = false;
+        safePostToPort(currentAnalysisPort, { type: 'stockfish-error', error: msg.error });
+    }
 }
 
 function isValidAnalyzeMessage(msg) {
