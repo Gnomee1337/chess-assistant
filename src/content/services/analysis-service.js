@@ -15,6 +15,7 @@ const MIN_DEPTH = 5;
 const MAX_DEPTH = 25;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 1000;
+const RETRY_AFTER_RECONNECT_MS = 250;
 const ANALYSIS_TIMEOUT_MS = 30000;
 
 export class AnalysisService {
@@ -83,13 +84,30 @@ export class AnalysisService {
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connect();
-
-            if (this.port && this.pendingRetryFen) {
-                const fen = this.pendingRetryFen;
-                this.pendingRetryFen = null;
-                this.analyzeFen(fen);
-            }
+            this.retryPendingAnalysis();
         }, delay);
+    }
+
+    retryPendingAnalysis() {
+        if (!this.port || !this.pendingRetryFen) return;
+
+        const fen = this.pendingRetryFen;
+        this.pendingRetryFen = null;
+
+        setTimeout(() => {
+            if (!this.port) {
+                this.pendingRetryFen = fen;
+                this.scheduleReconnect();
+                return;
+            }
+
+            logger.log('Retrying analysis after reconnect');
+            const sent = this.sendAnalyzeRequest(fen, false);
+            if (!sent) {
+                this.pendingRetryFen = fen;
+                this.scheduleReconnect();
+            }
+        }, RETRY_AFTER_RECONNECT_MS);
     }
 
     async ensureConnected() {
@@ -163,15 +181,22 @@ export class AnalysisService {
         }
 
         logger.log('Analyzing position:', fen);
-        this.analyzeFen(fen);
+        const sent = this.sendAnalyzeRequest(fen);
+        if (!sent) {
+            this.pendingRetryFen = fen;
+            if (this.onErrorCallback) {
+                this.onErrorCallback('Lost connection to background. Retrying...');
+            }
+            this.scheduleReconnect();
+        }
     }
 
-    analyzeFen(fen) {
+    sendAnalyzeRequest(fen, triggerStartCallback = true) {
         this.lastFen = fen;
         this.isAnalyzing = true;
         this.startAnalysisTimeout();
 
-        if (this.onAnalyzeStartCallback) {
+        if (triggerStartCallback && this.onAnalyzeStartCallback) {
             this.onAnalyzeStartCallback(fen);
         }
 
@@ -181,11 +206,12 @@ export class AnalysisService {
                 fen,
                 depth: this.normalizeDepth(this.depth)
             });
+            return true;
         } catch (e) {
             logger.error('postMessage failed:', e);
+            this.resetAnalyzingState();
             this.port = null;
-            this.handleError('Lost connection to background. Retrying...');
-            this.scheduleReconnect();
+            return false;
         }
     }
 
