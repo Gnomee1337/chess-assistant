@@ -9,7 +9,7 @@
         "build:firefox:prod": "NODE_ENV=production node scripts/build.js --firefox --prod",
         "build:chrome": "node scripts/build.js --chrome",
         "build:chrome:prod": "NODE_ENV=production node scripts/build.js --chrome --prod",
-        "build:debug": "node scripts/build.js --debug",
+        // "build:debug": "node scripts/build.js --debug",
         "watch": "node scripts/build.js --watch",
         "watch:firefox": "node scripts/build.js --watch --firefox",
         "clean": "node scripts/build.js --clean",
