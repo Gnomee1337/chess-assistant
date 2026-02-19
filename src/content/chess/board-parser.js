@@ -44,6 +44,9 @@ export class BoardParser {
                     }
                 }
 
+                logger.log('Parsed FEN from DOM:', fenFromDOM);
+                logger.log('Current turn:', fenFromDOM.split(' ')[1] === 'w' ? 'WHITE' : 'BLACK');
+
                 return fenFromDOM;
             }
 

@@ -9,6 +9,7 @@ import { AnalysisService } from './services/analysis-service.js';
 import { OpeningExplorer } from './services/opening-explorer.js';
 import { Overlay } from './ui/overlay.js';
 import { MoveHighlighter } from './chess/move-highlighter.js';
+import { BoardParser } from './chess/board-parser.js';
 import { SELECTORS, STORAGE_KEYS } from '../shared/constants.js';
 
 const logger = new Logger('Content');
@@ -20,6 +21,8 @@ class ChessAssistant {
         this.overlay = new Overlay(this.analysisService);
         this.moveObserver = null;
         this.lastMoveCount = 0;
+        this.analysisStartFEN = null;
+        this.analysisStartTurn = null;
         this.topMoves = [];
         this.currentAnalysisDepth = 0;
         this.maxAnalysisDepth = 0;
@@ -130,6 +133,13 @@ class ChessAssistant {
             this.topMoves = [];
             this.currentAnalysisDepth = 0;
             this.maxAnalysisDepth = this.analysisService.depth;
+
+            this.analysisStartFEN = this.analysisService.lastFen;
+            this.analysisStartTurn = this.analysisStartFEN.split(' ')[1];
+
+            logger.log('Analysis started for FEN:', this.analysisStartFEN);
+            logger.log('Analysis started, turn was:', this.analysisStartTurn);
+
             MoveHighlighter.clearAll();
         });
 
@@ -157,6 +167,13 @@ class ChessAssistant {
 
             this.parseMultiPVInfo(message);
 
+            // Check if position has changed before displaying
+            if (!this.isAnalysisStillValid()) {
+                logger.warn('Position changed during analysis, stopping display');
+                this.stopCurrentAnalysis();
+                return;
+            }
+
             // Update UI with partial results every few depths
             // Show partial results with depth indicator
             if (this.topMoves.length > 0) {
@@ -172,6 +189,12 @@ class ChessAssistant {
                 }
             }
         } else if (message.includes('bestmove')) {
+            // Check one more time before displaying final results
+            if (!this.isAnalysisStillValid()) {
+                logger.warn('Position changed, discarding analysis results');
+                this.stopCurrentAnalysis();
+                return;
+            }
             // Show final results without depth (or keep it)
             this.currentAnalysisDepth = 0;
             this.displayResults();
@@ -315,10 +338,49 @@ class ChessAssistant {
         // Reset overlay UI
         this.currentAnalysisDepth = 0;
         this.topMoves = [];
+        this.analysisStartFEN = null;
+        this.analysisStartTurn = null;
         MoveHighlighter.clearAll();
 
         // Clear the moves display
-        this.overlay.updateMessage('New move detected, analyzing...');
+        this.overlay.updateMessage('Position changed, analyzing new position...');
+    }
+
+    /**
+     * Check if the current board position matches when analysis started
+     * If the position changed (opponent moved), analysis is no longer valid
+     */
+    isAnalysisStillValid() {
+        const currentFEN = BoardParser.getCurrentFEN();
+        if (!currentFEN || !this.analysisStartFEN) {
+            logger.warn('Cannot validate analysis: missing FEN');
+            return true; // Assume valid if we can't check
+        }
+
+        // Get current turn
+        const currentTurn = currentFEN.split(' ')[1];
+        const startTurn = this.analysisStartTurn;
+
+        // If turn changed, position changed!
+        if (currentTurn !== startTurn) {
+            logger.warn(
+                `Turn changed during analysis! Started: ${startTurn}, Now: ${currentTurn}`
+            );
+            return false;
+        }
+
+        // Also compare the full FEN position (not move counter)
+        const currentPos = currentFEN.split(' ').slice(0, 4).join(' ');
+        const startPos = this.analysisStartFEN.split(' ').slice(0, 4).join(' ');
+
+        if (currentPos !== startPos) {
+            logger.warn('Position changed during analysis');
+            logger.warn('Started:', startPos);
+            logger.warn('Now:', currentPos);
+            return false;
+        }
+
+        return true;
     }
 
     getMoveCount() {

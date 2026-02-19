@@ -250,7 +250,10 @@ export class AnalysisService {
      * Called when a new move is detected or user stops analysis
      */
     stopAnalysis() {
-        if (!this.isAnalyzing) return;
+        if (!this.isAnalyzing) {
+            logger.log('No analysis running to stop');
+            return;
+        }
 
         logger.log('Stopping current analysis');
 
@@ -267,6 +270,7 @@ export class AnalysisService {
 
         // Reset state immediately
         this.resetAnalyzingState();
+        this.pendingRetryFen = null;
     }
 
     retryPendingAnalysis() {
