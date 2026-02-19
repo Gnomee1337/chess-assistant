@@ -26,6 +26,8 @@ export class AnalysisService {
         this.isAnalyzing = false;
         this.depth = 15;
         this.lastFen = null;
+        this.keepAliveInterval = null;
+        this.keepAliveTimer = null;
         this.onMoveCallback = null;
         this.onErrorCallback = null;
         this.onLoadingCallback = null;
@@ -54,6 +56,7 @@ export class AnalysisService {
                 const hadInFlightAnalysis = this.isAnalyzing;
                 this.port = null;
                 this.resetAnalyzingState();
+                this.stopKeepAlive();
 
                 if (hadInFlightAnalysis && this.lastFen) {
                     this.pendingRetryFen = this.lastFen;
@@ -66,6 +69,7 @@ export class AnalysisService {
             });
 
             this.reconnectAttempts = 0;
+            this.startKeepAlive();
             logger.log('Connected to background script');
         } catch (error) {
             logger.error('Failed to connect:', error);
@@ -121,6 +125,31 @@ export class AnalysisService {
         if (this.port) return true;
         await this.delay(100);
         return this.port !== null;
+    }
+
+    startKeepAlive() {
+        if (this.keepAliveInterval) return;
+
+        // Send ping every 25 seconds to prevent MV3 worker unload
+        this.keepAliveInterval = setInterval(() => {
+            if (this.port) {
+                try {
+                    this.port.postMessage({
+                        type: 'keep-alive',
+                        timestamp: Date.now()
+                    });
+                } catch (e) {
+                    logger.warn('Keep-alive ping failed:', e);
+                }
+            }
+        }, 25000);  // Every 25 seconds (MV3 service worker timeout is 30s)
+    }
+
+    stopKeepAlive() {
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
+        }
     }
 
     // ── Message handling ──────────────────────────────────────────────────────
