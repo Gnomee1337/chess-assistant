@@ -2,6 +2,10 @@
 
 A free browser extension that provides real-time chess analysis powered by Stockfish directly on [chess.com](https://www.chess.com) and [lichess.org](https://lichess.org).
 
+<img src="https://i.imgur.com/R8GnEoh.jpeg" width="700">
+
+<img src="https://i.imgur.com/CYJSMjJ.jpeg" width="700">
+
 ---
 
 ## Features
