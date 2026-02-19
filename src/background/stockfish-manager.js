@@ -16,16 +16,33 @@ export class StockfishManager {
         this.initAttempts = 0;
         this.maxAttempts = 3;
         this.isAnalyzing = false;
+        this.initPromise = null;
     }
 
     /**
-     * Initialize Stockfish engine
+     * Initialize Stockfish engine (singleton pattern)
      */
     async initialize() {
-        if (this.engine || this.initAttempts >= this.maxAttempts) {
+        // Return existing init promise if already in progress
+        if (this.initPromise) {
+            return this.initPromise;
+        }
+
+        // Skip if already initialized
+        if (this.engine) {
             return;
         }
 
+        if (this.initAttempts >= this.maxAttempts) {
+            logger.error('Max init attempts reached');
+            return;
+        }
+
+        this.initPromise = this._performInit();
+        return this.initPromise;
+    }
+
+    async _performInit() {
         this.initAttempts++;
         logger.log(`Initialization attempt ${this.initAttempts}/${this.maxAttempts}`);
 
@@ -41,8 +58,31 @@ export class StockfishManager {
             };
 
             this.wrapper.onMessage((message) => this.handleMessage(message));
-            this.wrapper.postMessage('uci');
+
+            // Wait for uciok before resolving
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Stockfish initialization timeout'));
+                }, 15000);
+
+                const checkReady = setInterval(() => {
+                    if (this.ready) {
+                        clearInterval(checkReady);
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                }, 100);
+            }).then(() => {
+                this.initPromise = null;
+                logger.log('✅ Engine ready!');
+            }).catch((error) => {
+                this.initPromise = null;
+                logger.error('Initialization failed:', error);
+                this.reset();
+                throw error;
+            });
         } catch (error) {
+            this.initPromise = null;
             logger.error('Initialization failed:', error);
             this.reset();
         }
@@ -53,11 +93,8 @@ export class StockfishManager {
      * @param {string} message - Stockfish output
      */
     handleMessage(message) {
-        logger.log('Stockfish:', message);
-
         if (message.includes('uciok')) {
             this.ready = true;
-            logger.log('✅ Engine ready!');
         }
 
         if (message.includes('bestmove')) {
@@ -97,10 +134,9 @@ export class StockfishManager {
 
         logger.log(`Analyzing position at depth ${depth}`);
 
-        this.isAnalyzing = true;
-        this.wrapper.postMessage('stop');
-
         setTimeout(() => {
+            this.isAnalyzing = true;
+            this.wrapper.postMessage('stop');
             this.wrapper.postMessage('ucinewgame');
             this.wrapper.postMessage(`position fen ${fen}`);
             this.wrapper.postMessage('setoption name MultiPV value 3');
@@ -127,6 +163,7 @@ export class StockfishManager {
         this.engine = null;
         this.ready = false;
         this.isAnalyzing = false;
+        this.initPromise = null;
         this.wrapper = new StockfishWrapper();
     }
 

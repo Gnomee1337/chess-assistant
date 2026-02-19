@@ -15,7 +15,7 @@ const MIN_DEPTH = 5;
 const MAX_DEPTH = 25;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 1000;
-const RETRY_AFTER_RECONNECT_MS = 250;
+const RETRY_AFTER_RECONNECT_MS = 50;
 const ANALYSIS_TIMEOUT_MS = 30000;
 const ENGINE_LOADING_TIMEOUT_MS = 180000;
 const MAX_TIMEOUT_RECOVERY_ATTEMPTS = 1;
@@ -119,7 +119,7 @@ export class AnalysisService {
         if (this.port) return true;
         this.connect();
         if (this.port) return true;
-        await this.delay(500);
+        await this.delay(100);
         return this.port !== null;
     }
 
