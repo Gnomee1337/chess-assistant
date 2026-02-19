@@ -174,6 +174,16 @@ async function bundleSource() {
         logWarning('offscreen.js not found in src/background/ — Chrome analysis will not work');
     }
 
+    // Firefox Stockfish worker wrapper (applies WASM patches, then importScripts stockfish.js)
+    // Must be a real extension file (not a blob) so that relative paths resolve correctly.
+    const firefoxWorkerSrc = path.join(SRC_DIR, 'background', 'stockfish-worker-ff.js');
+    if (await fs.pathExists(firefoxWorkerSrc)) {
+        await fs.copy(firefoxWorkerSrc, path.join(DIST_DIR, 'stockfish-worker-ff.js'));
+        logSuccess('Copied stockfish-worker-ff.js');
+    } else {
+        logWarning('stockfish-worker-ff.js not found in src/background/ — Firefox analysis will not work');
+    }
+
     // Offscreen HTML (Chrome MV3)
     const offscreenHTML = path.join(PUBLIC_DIR, 'offscreen.html');
     if (await fs.pathExists(offscreenHTML)) {

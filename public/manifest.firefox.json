@@ -12,10 +12,9 @@
   "permissions": [
     "storage",
     "https://www.chess.com/*",
-    "https://lichess.org/*",
-    "https://cdn.jsdelivr.net/*"
+    "https://lichess.org/*"
   ],
-  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net 'wasm-eval'; object-src 'self'",
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
   "background": {
     "scripts": [
       "browser-polyfill.js",
@@ -41,6 +40,7 @@
   "web_accessible_resources": [
     "stockfish.js",
     "stockfish.wasm",
+    "stockfish-worker-ff.js",
     "ecoA.json",
     "ecoB.json",
     "ecoC.json",

@@ -1,21 +1,27 @@
 // Background service worker — Chess Assistant
 //
-// WHY OFFSCREEN DOCUMENT:
-//   Chrome MV3 service workers lack new Worker() AND forbid importScripts()
-//   inside async code. The only way to host a Web Worker is via an Offscreen
-//   Document (chrome.offscreen API), which runs in a normal browser context.
-//
 // Architecture:
-//   content script ──port──▶ service worker ──sendMessage──▶ offscreen doc
-//                  ◀─────────               ◀──────────────  (Stockfish Worker)
+//   Chrome MV3:
+//     content script ──port──▶ service worker ──sendMessage──▶ offscreen doc
+//                    ◀─────────               ◀──────────────  (Stockfish Worker)
+//
+//   Firefox MV2:
+//     content script ──port──▶ background page ──Worker(stockfish-worker-ff.js)
+//                    ◀─────────
+//
+//   Firefox uses a pure-JS (asm.js) Stockfish build — no .wasm file, no fetch,
+//   no SharedArrayBuffer workarounds needed.
 
 'use strict';
+
+const IS_FIREFOX = typeof browser !== 'undefined' && !!browser.runtime;
 
 let currentAnalysisPort = null;
 let stockfishReady = false;
 let isAnalyzing = false;
-let pendingAnalysis = null;   // queued while engine is loading
+let pendingAnalysis = null;
 let offscreenReady = false;
+let firefoxWorker = null;
 
 const ANALYSIS_LIMITS = {
     MIN_DEPTH: 5,
@@ -23,7 +29,43 @@ const ANALYSIS_LIMITS = {
     MAX_FEN_LENGTH: 128
 };
 
-// ─── Offscreen document management ───────────────────────────────────────────
+// ─── Firefox: pure-JS Worker ─────────────────────────────────────────────────
+
+function initFirefoxWorker() {
+    if (firefoxWorker) return;
+
+    console.log('Background (Firefox) - Starting Stockfish Worker...');
+
+    try {
+        firefoxWorker = new Worker(chrome.runtime.getURL('stockfish-worker-ff.js'));
+    } catch (e) {
+        console.error('Background (Firefox) - Worker() failed:', e);
+        safePostToPort(currentAnalysisPort, {
+            type: 'stockfish-error',
+            error: 'Failed to create Stockfish Worker: ' + e.message
+        });
+        return;
+    }
+
+    firefoxWorker.onmessage = function (event) {
+        const msg = typeof event === 'string' ? event
+            : (event.data !== undefined ? event.data : String(event));
+        handleOffscreenMsg({ type: 'offscreen-output', data: msg });
+    };
+
+    firefoxWorker.onerror = function (err) {
+        console.error('Background (Firefox) - Worker error:', err);
+        handleOffscreenMsg({
+            type: 'offscreen-error',
+            error: err.message || 'Unknown Stockfish Worker error'
+        });
+        firefoxWorker = null;
+    };
+
+    firefoxWorker.postMessage('uci');
+}
+
+// ─── Chrome: Offscreen document management ────────────────────────────────────
 
 async function ensureOffscreenDocument() {
     try {
@@ -31,13 +73,11 @@ async function ensureOffscreenDocument() {
             offscreenReady = true;
             return true;
         }
-
         await chrome.offscreen.createDocument({
             url: chrome.runtime.getURL('offscreen.html'),
             reasons: ['WORKERS'],
             justification: 'Run Stockfish chess engine in a Web Worker'
         });
-
         offscreenReady = true;
         console.log('Background - Offscreen document created');
         return true;
@@ -49,6 +89,11 @@ async function ensureOffscreenDocument() {
 }
 
 function sendToStockfish(command) {
+    if (IS_FIREFOX) {
+        if (firefoxWorker) firefoxWorker.postMessage(command);
+        else console.warn('Background (Firefox) - worker not ready, dropping:', command);
+        return;
+    }
     chrome.runtime.sendMessage({ type: 'stockfish-command', command })
         .catch(e => console.warn('Background - sendToStockfish failed:', e.message));
 }
@@ -56,8 +101,13 @@ function sendToStockfish(command) {
 // ─── Engine init ──────────────────────────────────────────────────────────────
 
 async function initStockfish() {
-    console.log('Background - Initialising Stockfish via offscreen document...');
+    if (IS_FIREFOX) {
+        console.log('Background (Firefox) - Initialising Stockfish...');
+        initFirefoxWorker();
+        return;
+    }
 
+    console.log('Background - Initialising Stockfish via offscreen document...');
     const ok = await ensureOffscreenDocument();
     if (!ok) {
         safePostToPort(currentAnalysisPort, {
@@ -67,14 +117,11 @@ async function initStockfish() {
         return;
     }
 
-    // If the SW was killed and restarted while the offscreen doc survived,
-    // the engine may already be ready — ask for its current state.
     try {
         const status = await chrome.runtime.sendMessage({ type: 'stockfish-status-request' });
         if (status && status.ready) {
             console.log('Background - Offscreen engine already ready (SW restart recovery)');
             stockfishReady = true;
-
             if (pendingAnalysis) {
                 const queued = pendingAnalysis;
                 pendingAnalysis = null;
@@ -83,40 +130,31 @@ async function initStockfish() {
             return;
         }
     } catch {
-        // Offscreen doc not yet listening — that's fine, we'll get uciok when it's ready.
+        // Offscreen doc not yet listening — that's fine.
     }
 
-    // Send 'uci' to start the handshake. The offscreen doc will forward it to the
-    // Worker which will respond with 'uciok' → caught below in onMessage.
     sendToStockfish('uci');
 }
 
-// ─── Messages FROM offscreen document ────────────────────────────────────────
+// ─── Messages FROM offscreen document (Chrome only) ──────────────────────────
 
 chrome.runtime.onMessage.addListener(function (msg, sender) {
-    // Only accept messages from our own extension pages.
     if (sender.id !== chrome.runtime.id) return;
-    // Ignore messages from content scripts (they use the port instead).
     if (sender.tab) return;
-    // Fallback for browsers/scenarios where the port isn't used
     handleOffscreenMsg(msg);
 });
 
 // ─── Port connection from content script ─────────────────────────────────────
 
 chrome.runtime.onConnect.addListener(function (port) {
-    // ── Offscreen document output port ──────────────────────────────────────
     if (port.name === 'offscreen') {
-        port.onMessage.addListener(function (msg) {
-            handleOffscreenMsg(msg);
-        });
-        port.onDisconnect.addListener(function () {
+        port.onMessage.addListener(msg => handleOffscreenMsg(msg));
+        port.onDisconnect.addListener(() => {
             console.warn('Background - Offscreen output port disconnected');
         });
         return;
     }
 
-    // ── Content script port ─────────────────────────────────────────────────
     if (port.name !== 'chess-assistant') return;
 
     if (!isTrustedPort(port)) {
@@ -126,8 +164,6 @@ chrome.runtime.onConnect.addListener(function (port) {
     }
 
     currentAnalysisPort = port;
-
-    // (Re-)init whenever a content script connects so a restarted SW recovers cleanly.
     initStockfish();
 
     port.onMessage.addListener(function (msg) {
@@ -138,7 +174,7 @@ chrome.runtime.onConnect.addListener(function (port) {
         }
     });
 
-    port.onDisconnect.addListener(function () {
+    port.onDisconnect.addListener(() => {
         currentAnalysisPort = null;
     });
 });
@@ -160,7 +196,6 @@ function handleAnalyzeRequest(msg) {
     }
 
     if (!stockfishReady) {
-        // Engine still loading (large WASM) — queue and notify UI.
         console.log('Background - Engine loading, queuing analysis...');
         pendingAnalysis = { fen: safeFen, depth: safeDepth };
         safePostToPort(currentAnalysisPort, {
@@ -180,10 +215,16 @@ function handleReset() {
     offscreenReady = false;
     pendingAnalysis = null;
 
-    // Destroy the offscreen document so a fresh one is created on next init.
-    chrome.offscreen.closeDocument().catch(() => { });
-
-    setTimeout(() => initStockfish(), 300);
+    if (IS_FIREFOX) {
+        if (firefoxWorker) {
+            firefoxWorker.terminate();
+            firefoxWorker = null;
+        }
+        setTimeout(() => initStockfish(), 300);
+    } else {
+        chrome.offscreen.closeDocument().catch(() => { });
+        setTimeout(() => initStockfish(), 300);
+    }
 }
 
 function runAnalysis(msg) {
@@ -205,7 +246,6 @@ function runAnalysis(msg) {
             sendToStockfish('go depth ' + msg.depth);
             console.log('Background - ✅ Analysis commands sent');
         }, 50);
-
     } catch (e) {
         console.error('Background - Error sending analysis commands:', e);
         isAnalyzing = false;
@@ -263,7 +303,7 @@ function handleOffscreenMsg(msg) {
         safePostToPort(currentAnalysisPort, { type: 'stockfish-message', data: message });
 
     } else if (msg.type === 'offscreen-error') {
-        console.error('Background - Offscreen Stockfish error:', msg.error);
+        console.error('Background - Stockfish error:', msg.error);
         stockfishReady = false;
         isAnalyzing = false;
         safePostToPort(currentAnalysisPort, { type: 'stockfish-error', error: msg.error });
