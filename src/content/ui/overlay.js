@@ -310,13 +310,38 @@ export class Overlay {
         await this.analysisService.analyze();
     }
 
-    displayMoves(moves) {
+    /**
+   * Display moves with optional depth indicator
+   * @param {Array} moves - Move data array
+   * @param {number} currentDepth - Current analysis depth (0 = final results)
+   * @param {number} maxDepth - Target analysis depth
+   */
+    displayMoves(moves, currentDepth = 0, maxDepth = 0) {
         const container = document.getElementById('chess-assistant-moves');
         if (!container) return;
 
         if (moves.length === 0) {
             container.innerHTML = '<div class="loading">No moves found</div>';
             return;
+        }
+
+        // Build depth progress indicator
+        let depthHTML = '';
+        if (currentDepth > 0 && maxDepth > 0) {
+            const progress = Math.round((currentDepth / maxDepth) * 100);
+            depthHTML = `
+                <div class="depth-indicator">
+                    <div class="depth-label">
+                        <a>Depth: </a>
+                        <span class="depth-current">${currentDepth}</span>
+                        <span class="depth-separator">/</span>
+                        <span class="depth-max">${maxDepth}</span>
+                    </div>
+                    <div class="depth-bar-container">
+                        <div class="depth-bar-fill" style="width: ${progress}%"></div>
+                    </div>
+                </div>
+            `;
         }
 
         const medals = ['🥇', '🥈', '🥉'];
@@ -334,7 +359,7 @@ export class Overlay {
             `;
         });
 
-        container.innerHTML = html;
+        container.innerHTML = depthHTML + html;
 
         container.querySelectorAll('.move-item').forEach(item => {
             item.addEventListener('mouseenter', () => {

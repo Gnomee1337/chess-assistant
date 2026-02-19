@@ -21,6 +21,8 @@ class ChessAssistant {
         this.moveObserver = null;
         this.lastMoveCount = 0;
         this.topMoves = [];
+        this.currentAnalysisDepth = 0;
+        this.maxAnalysisDepth = 0;
         this.repertoireLines = [];
         this.highlightColor = null;
         this.arrowColor = null;
@@ -126,6 +128,8 @@ class ChessAssistant {
 
         this.analysisService.onAnalyzeStart(() => {
             this.topMoves = [];
+            this.currentAnalysisDepth = 0;
+            this.maxAnalysisDepth = this.analysisService.depth;
             MoveHighlighter.clearAll();
         });
 
@@ -140,9 +144,36 @@ class ChessAssistant {
     }
 
     handleStockfishMessage(message) {
+        // Show intermediate moves as they arrive (before bestmove)
         if (message.includes('info depth') && message.includes('multipv')) {
+            // Extract and track depth
+            const depthMatch = message.match(/depth (\d+)/);
+            if (depthMatch) {
+                const depth = parseInt(depthMatch[1], 10);
+                if (depth > this.currentAnalysisDepth) {
+                    this.currentAnalysisDepth = depth;
+                }
+            }
+
             this.parseMultiPVInfo(message);
+
+            // Update UI with partial results every few depths
+            // Show partial results with depth indicator
+            if (this.topMoves.length > 0) {
+                const validMoves = this.topMoves
+                    .filter(m => m !== undefined)
+                    .slice(0, 3);
+                if (validMoves.length > 0) {
+                    this.overlay.displayMoves(
+                        validMoves,
+                        this.currentAnalysisDepth,
+                        this.maxAnalysisDepth
+                    );
+                }
+            }
         } else if (message.includes('bestmove')) {
+            // Show final results without depth (or keep it)
+            this.currentAnalysisDepth = 0;
             this.displayResults();
         }
     }
@@ -186,7 +217,7 @@ class ChessAssistant {
             const validMoves = this.topMoves.filter(m => m !== undefined);
             validMoves.sort((a, b) => a.multipv - b.multipv);
             this.topMoves = validMoves.slice(0, 3);
-            this.overlay.displayMoves(this.topMoves);
+            this.overlay.displayMoves(this.topMoves, 0, 0);
             this.updateOpeningExplorer();
         } else {
             this.overlay.showError('No moves found');
@@ -239,6 +270,7 @@ class ChessAssistant {
         logger.log('Setting up move observer');
 
         this.moveObserver = new MutationObserver(() => {
+            this.moveListCache = null;
             if (!this.overlay.autoAnalyze || !this.overlay.isEnabled) return;
 
             const currentMoveCount = this.getMoveCount();
@@ -250,7 +282,7 @@ class ChessAssistant {
                     if (!this.analysisService.isAnalyzing) {
                         this.overlay.analyze();
                     }
-                }, 500);
+                }, 50);
             }
         });
 
@@ -259,9 +291,18 @@ class ChessAssistant {
     }
 
     getMoveCount() {
-        const chessComMoves = document.querySelectorAll('.move-list .node').length;
-        if (chessComMoves > 0) return chessComMoves;
-        return document.querySelectorAll('rm6 l4x kwdb').length;
+        // Cache the selector results to avoid repeated DOM traversals
+        if (!this.moveListCache) {
+            this.moveListCache = {
+                chess_com: document.querySelectorAll('.move-list .node'),
+                lichess: document.querySelectorAll('rm6 l4x kwdb')
+            };
+        }
+
+        const chessComCount = this.moveListCache.chess_com.length;
+        if (chessComCount > 0) return chessComCount;
+
+        return this.moveListCache.lichess.length;
     }
 
     setupStorageListener() {
