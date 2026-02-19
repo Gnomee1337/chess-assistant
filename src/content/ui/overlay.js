@@ -316,7 +316,7 @@ export class Overlay {
    * @param {number} currentDepth - Current analysis depth (0 = final results)
    * @param {number} maxDepth - Target analysis depth
    */
-    displayMoves(moves, currentDepth = 0, maxDepth = 0) {
+    displayMoves(moves, currentDepth = 0, maxDepth = 0, color = null) {
         const container = document.getElementById('chess-assistant-moves');
         if (!container) return;
 
@@ -329,10 +329,21 @@ export class Overlay {
         let depthHTML = '';
         if (currentDepth > 0 && maxDepth > 0) {
             const progress = Math.round((currentDepth / maxDepth) * 100);
+
+            let colorLabel = '';
+            let colorClass = '';
+            if (color === 'white') {
+                colorLabel = '♔ White';
+                colorClass = 'color-white';
+            } else if (color === 'black') {
+                colorLabel = '♚ Black';
+                colorClass = 'color-black';
+            }
+
             depthHTML = `
-                <div class="depth-indicator">
+                <div class="depth-indicator" ${colorClass}>
                     <div class="depth-label">
-                        <a>Depth: </a>
+                        <span class="color-name">${colorLabel}</span>
                         <span class="depth-current">${currentDepth}</span>
                         <span class="depth-separator">/</span>
                         <span class="depth-max">${maxDepth}</span>

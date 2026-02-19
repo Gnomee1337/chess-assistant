@@ -339,11 +339,6 @@
 
 /* Depth indicator styling */
 
-@keyframes analyzing {
-    0%, 100% { opacity: 0.7; }
-    50% { opacity: 1; }
-}
-
 .depth-indicator {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 8px;
@@ -351,6 +346,16 @@
     margin-bottom: 10px;
     border-left: 3px solid #22c55e;
     animation: analyzing 1.5s ease-in-out infinite;
+}
+
+.depth-indicator.color-white {
+    border-left-color: #f0f0f0;
+    background: rgba(240, 240, 240, 0.08);
+}
+
+.depth-indicator.color-black {
+    border-left-color: #1f1f1f;
+    background: rgba(31, 31, 31, 0.15);
 }
 
 .depth-label {
@@ -361,6 +366,25 @@
     font-size: 12px;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.9);
+}
+
+.color-name {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    min-width: 60px;
+    text-align: center;
+}
+
+.color-white .color-name {
+    background: rgba(240, 240, 240, 0.15);
+    color: #ffffff;
+}
+
+.color-black .color-name {
+    background: rgba(0, 0, 0, 0.3);
+    color: #e0e0e0;
 }
 
 .depth-current {
@@ -395,4 +419,18 @@
     background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%);
     border-radius: 2px;
     transition: width 0.2s ease;
+}
+
+.depth-indicator.color-white .depth-bar-fill {
+    background: linear-gradient(90deg, #e0e0e0 0%, #ffffff 100%);
+}
+
+.depth-indicator.color-black .depth-bar-fill {
+    background: linear-gradient(90deg, #333333 0%, #555555 100%);
+}
+
+/* Animation */
+@keyframes analyzing {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
 }

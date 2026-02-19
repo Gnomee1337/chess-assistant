@@ -23,6 +23,7 @@ class ChessAssistant {
         this.lastMoveCount = 0;
         this.analysisStartFEN = null;
         this.analysisStartTurn = null;
+        this.analysisColor = null;
         this.topMoves = [];
         this.currentAnalysisDepth = 0;
         this.maxAnalysisDepth = 0;
@@ -136,9 +137,11 @@ class ChessAssistant {
 
             this.analysisStartFEN = this.analysisService.lastFen;
             this.analysisStartTurn = this.analysisStartFEN.split(' ')[1];
+            this.analysisColor = this.analysisStartTurn === 'w' ? 'white' : 'black';
 
             logger.log('Analysis started for FEN:', this.analysisStartFEN);
             logger.log('Analysis started, turn was:', this.analysisStartTurn);
+            logger.log('Analyzing color:', this.analysisColor);
 
             MoveHighlighter.clearAll();
         });
@@ -184,7 +187,8 @@ class ChessAssistant {
                     this.overlay.displayMoves(
                         validMoves,
                         this.currentAnalysisDepth,
-                        this.maxAnalysisDepth
+                        this.maxAnalysisDepth,
+                        this.analysisColor
                     );
                 }
             }
@@ -340,6 +344,7 @@ class ChessAssistant {
         this.topMoves = [];
         this.analysisStartFEN = null;
         this.analysisStartTurn = null;
+        this.analysisColor = null;
         MoveHighlighter.clearAll();
 
         // Clear the moves display
