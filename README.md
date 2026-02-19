@@ -1,25 +1,28 @@
-# Chess Assistant
+## Project Overview
+Chess Assistant is an extension to help improve their skills in chess
 
-Free chess analysis assistant for Chess.com and Lichess using Stockfish.
+## Installation
+1. Clone the repository:
+   ```
+   git clone https://github.com/Gnomee1337/chess-assistant.git
+   ```
+2. Navigate into the project directory:
+   ```
+   cd chess-assistant
+   ```
+3. Install the necessary packages:
+   ```
+   npm install
+   ```
 
-## Opening Explorer data source
+## Usage
 
-Opening Explorer uses ECO files from the `@chess-openings/eco.json` dataset.
 
-## Setup ECO files
+## Credits
+This project utilizes the following libraries:
+- [@hayatbiralem/eco.json](https://www.npmjs.com/package/@hayatbiralem/eco.json) 
+- [@nmrugg/stockfish.js v10.0.2](https://www.npmjs.com/package/@nmrugg/stockfish.js)
+For more details, refer to the documentation of each library.
 
-1. Download these files from the eco dataset and place them in `public/`:
-   - `ecoA.json`
-   - `ecoB.json`
-   - `ecoC.json`
-   - `ecoD.json`
-   - `ecoE.json`
-2. Build extension:
-   - `npm run build`
-
-The build copies these files into `dist/`, and the extension loads them at runtime via `chrome.runtime.getURL(...)`.
-
-## Runtime behavior
-
-- Opening matching first tries current position FEN, then falls back to move-sequence matching.
-- Overlay shows ECO code, opening name, detected recent moves, and continuation hints.
+## License
+This project is licensed under the MIT License. See the LICENSE file for more details.
