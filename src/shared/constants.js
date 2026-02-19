@@ -46,7 +46,9 @@ export const MESSAGE_TYPES = {
     ANALYZE: 'analyze',
     STOCKFISH_MESSAGE: 'stockfish-message',
     STOCKFISH_ERROR: 'stockfish-error',
-    RESET_ENGINE: 'reset-engine'
+    RESET_ENGINE: 'reset-engine',
+    STOP_ENGINE: 'stop-engine',
+    KEEP_ALIVE: 'keep-alive'
 };
 
 export const STORAGE_KEYS = {

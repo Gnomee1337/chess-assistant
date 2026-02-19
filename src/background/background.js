@@ -171,6 +171,13 @@ chrome.runtime.onConnect.addListener(function (port) {
             handleAnalyzeRequest(msg);
         } else if (msg && msg.type === 'reset-engine') {
             handleReset();
+
+        } else if (msg && msg.type === 'stop-engine') {
+            // Stop the current analysis
+            handleStopAnalysis();
+        } else if (msg && msg.type === 'keep-alive') {
+            // Keep-alive ping - do nothing, just keeps SW alive
+            console.log('Keep-alive ping received');
         }
     });
 
@@ -225,6 +232,17 @@ function handleReset() {
         chrome.offscreen.closeDocument().catch(() => { });
         setTimeout(() => initStockfish(), 300);
     }
+}
+
+function handleStopAnalysis() {
+    if (!isAnalyzing) {
+        console.log('Background - No analysis running to stop');
+        return;
+    }
+
+    console.log('Background - ⛔ Stopping analysis');
+    isAnalyzing = false;
+    sendToStockfish('stop');
 }
 
 function runAnalysis(msg) {

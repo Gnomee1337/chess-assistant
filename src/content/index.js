@@ -278,16 +278,34 @@ class ChessAssistant {
                 this.lastMoveCount = currentMoveCount;
                 logger.log('New move detected, auto-analyzing...');
 
-                setTimeout(() => {
-                    if (!this.analysisService.isAnalyzing) {
-                        this.overlay.analyze();
-                    }
-                }, 50);
+                // STOP any ongoing analysis for the old position
+                this.stopCurrentAnalysis();
+
+                // Now analyze the new position
+                if (!this.analysisService.isAnalyzing) {
+                    this.overlay.analyze();
+                }
             }
         });
 
         this.moveObserver.observe(moveList, { childList: true, subtree: true });
         this.lastMoveCount = this.getMoveCount();
+    }
+
+    // Stop current analysis and reset UI
+    stopCurrentAnalysis() {
+        logger.log('Stopping previous analysis for old position');
+
+        // Stop the analysis in the engine
+        this.analysisService.stopAnalysis();
+
+        // Reset overlay UI
+        this.currentAnalysisDepth = 0;
+        this.topMoves = [];
+        MoveHighlighter.clearAll();
+
+        // Clear the moves display
+        this.overlay.updateMessage('New move detected, analyzing...');
     }
 
     getMoveCount() {

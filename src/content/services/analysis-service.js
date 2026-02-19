@@ -78,6 +78,14 @@ export class AnalysisService {
         }
     }
 
+    async ensureConnected() {
+        if (this.port) return true;
+        this.connect();
+        if (this.port) return true;
+        await this.delay(100);
+        return this.port !== null;
+    }
+
     scheduleReconnect() {
         if (this.reconnectTimer) return;
         if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -94,37 +102,6 @@ export class AnalysisService {
             this.connect();
             this.retryPendingAnalysis();
         }, delay);
-    }
-
-    retryPendingAnalysis() {
-        if (!this.port || !this.pendingRetryFen) return;
-
-        const fen = this.pendingRetryFen;
-        this.pendingRetryFen = null;
-        this.waitingForEngine = false;
-
-        setTimeout(() => {
-            if (!this.port) {
-                this.pendingRetryFen = fen;
-                this.scheduleReconnect();
-                return;
-            }
-
-            logger.log('Retrying analysis after reconnect');
-            const sent = this.sendAnalyzeRequest(fen, false);
-            if (!sent) {
-                this.pendingRetryFen = fen;
-                this.scheduleReconnect();
-            }
-        }, RETRY_AFTER_RECONNECT_MS);
-    }
-
-    async ensureConnected() {
-        if (this.port) return true;
-        this.connect();
-        if (this.port) return true;
-        await this.delay(100);
-        return this.port !== null;
     }
 
     startKeepAlive() {
@@ -232,6 +209,12 @@ export class AnalysisService {
     }
 
     sendAnalyzeRequest(fen, triggerStartCallback = true) {
+        // Before analyzing new position, stop old analysis
+        if (this.isAnalyzing) {
+            logger.log('Previous analysis still running, stopping it first');
+            this.stopAnalysis();
+        }
+
         this.lastFen = fen;
         this.isAnalyzing = true;
         this.waitingForEngine = false;
@@ -254,6 +237,53 @@ export class AnalysisService {
             this.port = null;
             return false;
         }
+    }
+
+    /**
+     * Stop the current analysis immediately
+     * Called when a new move is detected or user stops analysis
+     */
+    stopAnalysis() {
+        if (!this.isAnalyzing) return;
+
+        logger.log('Stopping current analysis');
+
+        // Tell the engine to stop thinking
+        try {
+            if (this.port) {
+                this.port.postMessage({
+                    type: MESSAGE_TYPES.STOP_ENGINE  // or use a direct command
+                });
+            }
+        } catch (e) {
+            logger.warn('Failed to send stop command:', e);
+        }
+
+        // Reset state immediately
+        this.resetAnalyzingState();
+    }
+
+    retryPendingAnalysis() {
+        if (!this.port || !this.pendingRetryFen) return;
+
+        const fen = this.pendingRetryFen;
+        this.pendingRetryFen = null;
+        this.waitingForEngine = false;
+
+        setTimeout(() => {
+            if (!this.port) {
+                this.pendingRetryFen = fen;
+                this.scheduleReconnect();
+                return;
+            }
+
+            logger.log('Retrying analysis after reconnect');
+            const sent = this.sendAnalyzeRequest(fen, false);
+            if (!sent) {
+                this.pendingRetryFen = fen;
+                this.scheduleReconnect();
+            }
+        }, RETRY_AFTER_RECONNECT_MS);
     }
 
     setDepth(depth) {
