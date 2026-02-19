@@ -25,7 +25,7 @@ const buildType = flags.debug ? 'debug' : (flags.prod ? 'production' : 'developm
 const browserType = flags.firefox ? 'firefox' : 'chrome';
 
 const ROOT_DIR = path.join(__dirname, '..');
-const DIST_DIR = path.join(ROOT_DIR, 'dist');
+const DIST_DIR = path.join(ROOT_DIR, 'dist', flags.firefox ? 'firefox' : 'chrome');
 const SRC_DIR = path.join(ROOT_DIR, 'src');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 
