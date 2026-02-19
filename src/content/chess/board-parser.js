@@ -23,9 +23,27 @@ export class BoardParser {
             }
 
             // Fallback to DOM parsing
-            const fenFromDOM = this.parseBoardFromDOM();
+            let fenFromDOM = this.parseBoardFromDOM();
             if (fenFromDOM && FENValidator.validate(fenFromDOM)) {
                 logger.log('Parsed FEN from DOM:', fenFromDOM);
+
+                // IMPORTANT: Verify the turn is correct based on move list
+                const correctTurn = this.determineTurn();
+                if (correctTurn) {
+                    const parts = fenFromDOM.split(' ');
+                    const fenTurn = parts[1];
+
+                    // If turn doesn't match move list, correct it
+                    if (fenTurn !== correctTurn) {
+                        logger.warn(
+                            `FEN turn mismatch! FEN says '${fenTurn}' but move list says '${correctTurn}'. Correcting...`
+                        );
+                        parts[1] = correctTurn;
+                        fenFromDOM = parts.join(' ');
+                        logger.log('Corrected FEN:', fenFromDOM);
+                    }
+                }
+
                 return fenFromDOM;
             }
 
@@ -301,38 +319,37 @@ export class BoardParser {
      * @returns {string} 'w' or 'b'
      */
     static determineTurn() {
+        // PRIORITY 1: Check move list (most reliable for Chess.com)
+        const moveListTurn = this.determineTurnFromMoveList();
+        if (moveListTurn) {
+            logger.log('Turn determined from move list:', moveListTurn);
+            return moveListTurn;
+        }
+
+        // PRIORITY 2: Check highlights (board position)
         const turnFromHighlights = this.determineTurnFromHighlights();
         if (turnFromHighlights) {
+            logger.log('Turn determined from highlights:', turnFromHighlights);
             return turnFromHighlights;
         }
 
+        // PRIORITY 3: Lichess clock
         const lichessTurn = this.determineTurnFromLichessClock();
         if (lichessTurn) {
+            logger.log('Turn determined from Lichess clock:', lichessTurn);
             return lichessTurn;
         }
 
-        // Move-list parsing can be stale on Lichess when a non-latest ply is selected
-        // or when the currently-highlighted token is not the actual last played move.
-        // Keep this as a fallback behind visual board/clock signals.
+        // PRIORITY 4: Lichess move list parsing (can be stale)
         const lichessMoveListTurn = this.determineTurnFromLichessMoveList();
         if (lichessMoveListTurn) {
+            logger.log('Turn determined from Lichess move list:', lichessMoveListTurn);
             return lichessMoveListTurn;
         }
 
-        try {
-            const lastMove = document.querySelector('.move-list .node.selected');
-            if (lastMove) {
-                if (lastMove.classList.contains('black-move')) {
-                    return 'w';
-                } else if (lastMove.classList.contains('white-move')) {
-                    return 'b';
-                }
-            }
-        } catch (error) {
-            logger.warn('Could not determine turn:', error);
-        }
-
-        return 'w'; // Default to white
+        // Default fallback
+        logger.warn('Could not determine turn, defaulting to white');
+        return 'w';
     }
 
 
@@ -412,31 +429,34 @@ export class BoardParser {
         const highlights = boardElement.querySelectorAll('.highlight[class*="square-"]');
         if (!highlights.length) return null;
 
-        for (const highlight of highlights) {
-            const squareMatch = highlight.className.match(/square-(\d)(\d)/);
-            if (!squareMatch) continue;
+        // The LAST highlighted square (destination) contains the piece that just moved
+        const lastHighlight = highlights[highlights.length - 1];
+        const squareMatch = lastHighlight.className.match(/square-(\d)(\d)/);
 
-            const [, file, rank] = squareMatch;
-            const occupyingPiece = boardElement.querySelector(`.piece.square-${file}${rank}`);
-            if (!occupyingPiece) continue;
+        if (!squareMatch) return null;
 
-            if (occupyingPiece.classList.contains('wp') ||
-                occupyingPiece.classList.contains('wn') ||
-                occupyingPiece.classList.contains('wb') ||
-                occupyingPiece.classList.contains('wr') ||
-                occupyingPiece.classList.contains('wq') ||
-                occupyingPiece.classList.contains('wk')) {
-                return 'b';
-            }
+        const [, file, rank] = squareMatch;
+        const occupyingPiece = boardElement.querySelector(`.piece.square-${file}${rank}`);
 
-            if (occupyingPiece.classList.contains('bp') ||
-                occupyingPiece.classList.contains('bn') ||
-                occupyingPiece.classList.contains('bb') ||
-                occupyingPiece.classList.contains('br') ||
-                occupyingPiece.classList.contains('bq') ||
-                occupyingPiece.classList.contains('bk')) {
-                return 'w';
-            }
+        if (!occupyingPiece) return null;
+
+        // Check what color piece just moved
+        if (occupyingPiece.classList.contains('wp') ||
+            occupyingPiece.classList.contains('wn') ||
+            occupyingPiece.classList.contains('wb') ||
+            occupyingPiece.classList.contains('wr') ||
+            occupyingPiece.classList.contains('wq') ||
+            occupyingPiece.classList.contains('wk')) {
+            return 'b';  // White moved, so BLACK to move next
+        }
+
+        if (occupyingPiece.classList.contains('bp') ||
+            occupyingPiece.classList.contains('bn') ||
+            occupyingPiece.classList.contains('bb') ||
+            occupyingPiece.classList.contains('br') ||
+            occupyingPiece.classList.contains('bq') ||
+            occupyingPiece.classList.contains('bk')) {
+            return 'w';  // Black moved, so WHITE to move next
         }
 
         return null;
@@ -501,5 +521,36 @@ export class BoardParser {
             file,
             rank: 7 - boardRow
         };
+    }
+
+    /**
+    * Determine turn from the selected/highlighted move in move list
+    * Chess.com shows the last move highlighted with a .selected class
+    * Determine turn from the move list
+    * Looks at the LAST move to determine whose turn it is next
+    */
+    static determineTurnFromMoveList() {
+        try {
+            // Chess.com: Find ALL moves
+            const allMoves = document.querySelectorAll('.move-list .node.main-line-ply');
+            if (allMoves.length === 0) return null;
+
+            const lastMove = allMoves[allMoves.length - 1];
+
+            logger.log('Last move in list:', lastMove.className);
+
+            // Check the CLASS of the last move
+            if (lastMove.classList.contains('white-move')) {
+                // White just moved → BLACK to move next
+                return 'b';
+            } else if (lastMove.classList.contains('black-move')) {
+                // Black just moved → WHITE to move next
+                return 'w';
+            }
+        } catch (error) {
+            logger.warn('Could not determine turn from move list:', error);
+        }
+
+        return null;
     }
 }

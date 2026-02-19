@@ -178,6 +178,10 @@ class ChessAssistant {
         }
     }
 
+    /**
+    * Parse MultiPV info and track moves
+    * Only process if it's actually the human's turn
+    */
     parseMultiPVInfo(message) {
         if (!this.analysisService.isAnalyzing) return;
         const depthMatch = message.match(/depth (\d+)/);
@@ -191,6 +195,15 @@ class ChessAssistant {
         const depth = parseInt(depthMatch[1], 10);
         const multipv = parseInt(multipvMatch[1], 10);
         const move = moveMatch[1];
+
+        // Verify FEN turn matches what we expect
+        const fen = this.analysisService.lastFen;
+        const fenTurn = fen.split(' ')[1];
+
+        if (!fenTurn || (fenTurn !== 'w' && fenTurn !== 'b')) {
+            logger.warn('Invalid FEN turn in lastFen:', fenTurn, 'Full FEN:', fen);
+            return;
+        }
 
         let score, mateIn;
 

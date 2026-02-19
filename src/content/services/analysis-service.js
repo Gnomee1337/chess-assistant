@@ -196,6 +196,12 @@ export class AnalysisService {
             return;
         }
 
+        // Detect if we're playing and warn if analyzing for the wrong side
+        const fenTurn = fen.split(' ')[1];
+        const isWhiteToMove = fenTurn === 'w';
+
+        logger.log(`Analyzing position. Turn: ${isWhiteToMove ? 'WHITE' : 'BLACK'}`);
+
         this.timeoutRecoveryAttempts = 0;
         logger.log('Analyzing position:', fen);
         const sent = this.sendAnalyzeRequest(fen);
