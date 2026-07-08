@@ -204,3 +204,17 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ## Contributing
 
 Pull requests and issues are welcome! Please open an issue first to discuss any significant changes.
+
+## Disclaimer
+
+This project is provided for educational, research, and development purposes only.
+
+The software may include functionality that can interact with external systems, automate tasks, or process user-provided data. Improper or unauthorized use of these features may violate the terms of service of third-party platforms, local laws, or organizational policies.
+
+By using this project, you agree to:
+
+- Use it only on systems, accounts, and data you own or have explicit permission to access.
+- Comply with all applicable laws, regulations, and third-party terms of service.
+- Take full responsibility for how the software is used.
+
+The authors and contributors do not encourage, support, or accept responsibility for any illegal, unethical, or unauthorized use of this project.
